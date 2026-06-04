@@ -3,71 +3,76 @@
 # https://github.com/dhinojosac/init-harness
 set -euo pipefail
 
-VERSION="1.1.0"
-CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-banner() { echo -e "${CYAN}$1${NC}"; }
-ok()     { echo -e "${GREEN}✓ $1${NC}"; }
-warn()   { echo -e "${YELLOW}⚠ $1${NC}"; }
-fail()   { echo -e "${RED}✗ $1${NC}"; exit 1; }
+VERSION="1.2.0"
+CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
+banner()   { echo -e "\n${CYAN}${BOLD}▸ $1${NC}"; }
+ok()       { echo -e "  ${GREEN}✓${NC} $1"; }
+note()     { echo -e "  ${YELLOW}→${NC} $1"; }
+fail()     { echo -e "  ${RED}✗ $1${NC}"; exit 1; }
+divider()  { echo -e "${CYAN}────────────────────────────────────────────${NC}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMAND_FILE="$SCRIPT_DIR/init-harness.md"
-SKILL_DIR="$SCRIPT_DIR/skills/init-harness"
+SKILL_FILE="$SCRIPT_DIR/skills/init-harness/SKILL.md"
 
-[ -f "$COMMAND_FILE" ] || fail "init-harness.md not found. Run from the repo root."
-[ -f "$SKILL_DIR/SKILL.md" ] || fail "skills/init-harness/SKILL.md not found. Run from the repo root."
+[ -f "$COMMAND_FILE" ] || fail "init-harness.md not found — run from the repo root."
+[ -f "$SKILL_FILE"   ] || fail "skills/init-harness/SKILL.md not found — run from the repo root."
 
-banner "init-harness v$VERSION — Installer"
+divider
+echo -e "  ${BOLD}init-harness v$VERSION — Installer${NC}"
+divider
+
+# ── Claude Code  (commands format, still current) ────────────────────────────
+banner "Claude Code"
+CLAUDE_CMD="$HOME/.claude/commands"
+mkdir -p "$CLAUDE_CMD"
+cp "$COMMAND_FILE" "$CLAUDE_CMD/init-harness.md"
+ok "~/.claude/commands/init-harness.md"
+note "Invoke: /init-harness"
+
+# ── Cursor  (skills format — current standard) ────────────────────────────────
+banner "Cursor"
+CURSOR_SKILL="$HOME/.cursor/skills/init-harness"
+mkdir -p "$CURSOR_SKILL"
+cp "$SKILL_FILE" "$CURSOR_SKILL/SKILL.md"
+ok "~/.cursor/skills/init-harness/SKILL.md  (current)"
+
+# Legacy: keep commands/ for older Cursor versions
+CURSOR_CMD="$HOME/.cursor/commands"
+mkdir -p "$CURSOR_CMD"
+cp "$COMMAND_FILE" "$CURSOR_CMD/init-harness.md"
+ok "~/.cursor/commands/init-harness.md       (legacy fallback)"
+note "Invoke: /init-harness  in Cursor Agent chat"
+
+# ── Cross-agent standard (.agents/skills) ────────────────────────────────────
+# Canonical path for both Cursor and Codex (highest priority in both tools)
+banner "Cross-agent standard  (~/.agents/skills)"
+AGENTS_SKILL="$HOME/.agents/skills/init-harness"
+mkdir -p "$AGENTS_SKILL"
+cp "$SKILL_FILE" "$AGENTS_SKILL/SKILL.md"
+ok "~/.agents/skills/init-harness/SKILL.md"
+note "Used by: Cursor, OpenAI Codex, and any agent supporting the Agent Skills standard"
+
+# ── OpenAI Codex  (legacy path) ──────────────────────────────────────────────
+banner "OpenAI Codex  (legacy)"
+CODEX_SKILL="$HOME/.codex/skills/init-harness"
+mkdir -p "$CODEX_SKILL"
+cp "$SKILL_FILE" "$CODEX_SKILL/SKILL.md"
+ok "~/.codex/skills/init-harness/SKILL.md   (legacy fallback)"
+note "Invoke: \$init-harness  in Codex"
+
+# NOTE: Codex 'rules' (~/.codex/rules/) are Starlark command-permission files,
+# NOT behavior instructions — no init-harness rule file is created there.
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+divider
+echo -e "  ${BOLD}Installation complete — v$VERSION${NC}"
+divider
+printf "\n  %-20s %-42s %s\n" "Platform" "Path" "Command"
+printf "  %-20s %-42s %s\n" "──────────────────" "────────────────────────────────────────" "──────────────"
+printf "  %-20s %-42s %s\n" "Claude Code"     "~/.claude/commands/"                       "/init-harness"
+printf "  %-20s %-42s %s\n" "Cursor"          "~/.cursor/skills/  +  ~/.agents/skills/"   "/init-harness"
+printf "  %-20s %-42s %s\n" "OpenAI Codex"    "~/.agents/skills/  +  ~/.codex/skills/"    "\$init-harness"
 echo ""
-
-# ── Claude Code (commands format) ────────────────────────────────────────────
-echo "Installing for Claude Code..."
-CLAUDE_CMD_DIR="$HOME/.claude/commands"
-mkdir -p "$CLAUDE_CMD_DIR"
-cp "$COMMAND_FILE" "$CLAUDE_CMD_DIR/init-harness.md"
-ok "Claude Code  →  $CLAUDE_CMD_DIR/init-harness.md"
-echo "   Invoke: /init-harness"
+echo "  Open any project in your AI tool and run the command above."
 echo ""
-
-# ── Cursor (commands format) ──────────────────────────────────────────────────
-echo "Installing for Cursor..."
-CURSOR_CMD_DIR="$HOME/.cursor/commands"
-mkdir -p "$CURSOR_CMD_DIR"
-cp "$COMMAND_FILE" "$CURSOR_CMD_DIR/init-harness.md"
-ok "Cursor  →  $CURSOR_CMD_DIR/init-harness.md"
-echo "   Invoke: /init-harness"
-echo ""
-
-# ── OpenAI Codex (skills format — current standard) ──────────────────────────
-echo "Installing for OpenAI Codex (skills)..."
-CODEX_SKILL_DIR="$HOME/.agents/skills/init-harness"
-mkdir -p "$CODEX_SKILL_DIR"
-cp "$SKILL_DIR/SKILL.md" "$CODEX_SKILL_DIR/SKILL.md"
-ok "Codex (agents)  →  $CODEX_SKILL_DIR/SKILL.md"
-
-# Also install to legacy ~/.codex/skills/ for older Codex versions
-CODEX_LEGACY_DIR="$HOME/.codex/skills/init-harness"
-mkdir -p "$CODEX_LEGACY_DIR"
-cp "$SKILL_DIR/SKILL.md" "$CODEX_LEGACY_DIR/SKILL.md"
-ok "Codex (legacy) →  $CODEX_LEGACY_DIR/SKILL.md"
-echo "   Invoke: \$init-harness  or  /skills → init-harness"
-echo ""
-
-# ── Claude skills path (cross-agent standard) ─────────────────────────────────
-CLAUDE_SKILL_DIR="$HOME/.claude/skills/init-harness"
-mkdir -p "$CLAUDE_SKILL_DIR"
-cp "$SKILL_DIR/SKILL.md" "$CLAUDE_SKILL_DIR/SKILL.md"
-ok "Claude skills  →  $CLAUDE_SKILL_DIR/SKILL.md"
-echo ""
-
-# ── Done ──────────────────────────────────────────────────────────────────────
-banner "Installation complete!"
-echo ""
-printf "  %-16s %-30s %s\n" "Platform" "Format installed" "Command"
-printf "  %-16s %-30s %s\n" "────────────────" "──────────────────────────────" "──────────────────────────"
-printf "  %-16s %-30s %s\n" "Claude Code"     "~/.claude/commands/"    "/init-harness"
-printf "  %-16s %-30s %s\n" "Cursor"          "~/.cursor/commands/"    "/init-harness"
-printf "  %-16s %-30s %s\n" "Codex (current)" "~/.agents/skills/"      "\$init-harness"
-printf "  %-16s %-30s %s\n" "Codex (legacy)"  "~/.codex/skills/"       "\$init-harness"
-echo ""
-echo "Open any project in your AI tool and run the command above."

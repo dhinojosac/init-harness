@@ -1,7 +1,8 @@
 ---
 name: init-harness
 description: Initialize the AI agent harness for any project. Generates CLAUDE.md, AGENTS.md, .cursorrules, agent-features.json, agent-progress.md, scripts/init.sh, scripts/init.ps1, and .claude/settings.json — all tailored to the current codebase. Use when starting work on a new project or when the project lacks AI agent context files.
-version: "1.0.0"
+version: "1.2.0"
+disable-model-invocation: true
 ---
 
 Initialize the AI Agent Harness for the current project, based on Anthropic's

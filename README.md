@@ -1,6 +1,6 @@
 # init-harness
 
-**Version:** 1.1.0 &nbsp;|&nbsp; **License:** MIT &nbsp;|&nbsp; **Platforms:** Claude Code · Cursor · OpenAI Codex
+**Version:** 1.2.0 &nbsp;|&nbsp; **License:** MIT &nbsp;|&nbsp; **Platforms:** Claude Code · Cursor · OpenAI Codex
 
 > A single command that bootstraps an AI agent harness for any project —
 > works identically on Claude Code, Cursor, and OpenAI Codex.
@@ -91,11 +91,16 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 The installer copies `init-harness.md` to the commands directory of each platform:
 
-| Platform | Location |
-|----------|---------|
-| Claude Code | `~/.claude/commands/init-harness.md` |
-| Cursor | `~/.cursor/commands/init-harness.md` |
-| OpenAI Codex | `~/.agents/skills/init-harness/SKILL.md` |
+| Platform | Primary path | Format |
+|----------|-------------|--------|
+| Claude Code | `~/.claude/commands/init-harness.md` | Commands (`.md`) |
+| Cursor | `~/.cursor/skills/init-harness/SKILL.md` | Skills (`SKILL.md`) |
+| Cursor + Codex | `~/.agents/skills/init-harness/SKILL.md` | Cross-agent standard |
+| Codex (legacy) | `~/.codex/skills/init-harness/SKILL.md` | Skills (`SKILL.md`) |
+
+> **Note on Codex `rules/`:** Codex rules (`~/.codex/rules/*.rules`) are **Starlark files
+> that control which shell commands are allowed or blocked** — they are a security/permissions
+> system, not behavior instructions. The installer does not create anything there.
 
 ---
 
@@ -132,14 +137,20 @@ Open any project in your AI tool and type the command:
 | Platform | Command | How to invoke |
 |----------|---------|--------------|
 | **Claude Code** | `/init-harness` | Type `/` in the chat input |
-| **Cursor** | `/init-harness` | Type `/` in the AI chat panel |
+| **Cursor** | `/init-harness` | Type `/` in the Agent chat panel |
 | **OpenAI Codex** | `$init-harness` | Type `$` in the Codex terminal |
 
-> **Codex note:** Codex uses a `skills/` format natively (`SKILL.md` with YAML frontmatter).
-> The installer places the skill at `~/.agents/skills/init-harness/SKILL.md` (current standard)
-> and `~/.codex/skills/init-harness/SKILL.md` (legacy compatibility).
-> The repo also ships `skills/init-harness/SKILL.md` so Codex can load it
-> directly when you point it to the GitHub URL.
+**How each platform finds the skill:**
+
+| Platform | Mechanism | Paths scanned (highest → lowest priority) |
+|----------|----------|------------------------------------------|
+| Claude Code | `commands/` directory | `~/.claude/commands/` |
+| Cursor | Skills standard | `.agents/skills/` → `.cursor/skills/` → `~/.agents/skills/` → `~/.cursor/skills/` |
+| Codex | Skills standard | `.agents/skills/` → `$REPO_ROOT/.agents/skills/` → `~/.agents/skills/` |
+
+> **`disable-model-invocation: true`** is set in the `SKILL.md` frontmatter, which means
+> the skill only runs when you explicitly invoke it — it will never trigger automatically
+> in the middle of unrelated work.
 
 The agent will:
 1. Analyze your project (language, framework, git history, existing files)
@@ -329,13 +340,18 @@ cd init-harness
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-El instalador copia `init-harness.md` al directorio de comandos de cada plataforma:
+El instalador copia los archivos a los directorios correctos de cada plataforma:
 
-| Plataforma | Ubicación |
-|------------|----------|
-| Claude Code | `~/.claude/commands/init-harness.md` |
-| Cursor | `~/.cursor/commands/init-harness.md` |
-| OpenAI Codex | `~/.agents/skills/init-harness/SKILL.md` |
+| Plataforma | Path principal | Formato |
+|------------|---------------|---------|
+| Claude Code | `~/.claude/commands/init-harness.md` | Commands (`.md`) |
+| Cursor | `~/.cursor/skills/init-harness/SKILL.md` | Skills (`SKILL.md`) |
+| Cursor + Codex | `~/.agents/skills/init-harness/SKILL.md` | Estándar cross-agent |
+| Codex (legacy) | `~/.codex/skills/init-harness/SKILL.md` | Skills (`SKILL.md`) |
+
+> **Nota sobre Codex `rules/`:** Las rules de Codex (`~/.codex/rules/*.rules`) son **archivos
+> Starlark que controlan qué comandos shell están permitidos o bloqueados** — son un sistema
+> de permisos/seguridad, no instrucciones de comportamiento. El instalador no crea nada ahí.
 
 ---
 
@@ -372,14 +388,20 @@ Abre cualquier proyecto en tu herramienta de IA y escribe el comando:
 | Plataforma | Comando | Cómo invocarlo |
 |------------|---------|----------------|
 | **Claude Code** | `/init-harness` | Escribe `/` en el input del chat |
-| **Cursor** | `/init-harness` | Escribe `/` en el panel de chat de IA |
+| **Cursor** | `/init-harness` | Escribe `/` en el panel Agent chat |
 | **OpenAI Codex** | `$init-harness` | Escribe `$` en la terminal de Codex |
 
-> **Nota Codex:** Codex usa el formato nativo `skills/` (`SKILL.md` con frontmatter YAML).
-> El instalador coloca el skill en `~/.agents/skills/init-harness/SKILL.md` (estándar actual)
-> y `~/.codex/skills/init-harness/SKILL.md` (compatibilidad legacy).
-> El repo también incluye `skills/init-harness/SKILL.md` para que Codex lo cargue
-> directamente cuando le apuntas a la URL de GitHub.
+**Cómo cada plataforma encuentra el skill:**
+
+| Plataforma | Mecanismo | Paths escaneados (mayor → menor prioridad) |
+|------------|----------|--------------------------------------------|
+| Claude Code | Directorio `commands/` | `~/.claude/commands/` |
+| Cursor | Estándar Skills | `.agents/skills/` → `.cursor/skills/` → `~/.agents/skills/` → `~/.cursor/skills/` |
+| Codex | Estándar Skills | `.agents/skills/` → `$REPO_ROOT/.agents/skills/` → `~/.agents/skills/` |
+
+> **`disable-model-invocation: true`** está configurado en el frontmatter del `SKILL.md`,
+> lo que significa que el skill solo corre cuando lo invocás explícitamente — nunca se
+> dispara solo en medio de otro trabajo.
 
 El agente:
 1. Analizará tu proyecto (lenguaje, framework, historial git, archivos existentes)
@@ -475,6 +497,13 @@ MIT — uso libre en proyectos personales y comerciales.
 ---
 
 ### Changelog
+
+#### v1.2.0 — 2026-06-04
+- Cursor: migrado de `commands/` a `skills/` (nuevo estándar); legacy `commands/` se mantiene como fallback
+- Codex: path canónico ahora es `~/.agents/skills/` (cross-agent standard compartido con Cursor)
+- `SKILL.md` frontmatter: agregado `disable-model-invocation: true` (invocación solo explícita)
+- Aclarado que Codex `rules/` son archivos Starlark de permisos de shell, no reglas de comportamiento
+- README: tablas de paths e invocación actualizadas para ambas plataformas
 
 #### v1.1.0 — 2026-06-04
 - Agregada estructura nativa `skills/init-harness/SKILL.md` para OpenAI Codex
