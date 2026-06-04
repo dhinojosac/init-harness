@@ -1,6 +1,6 @@
 # init-harness
 
-**Version:** 1.0.0 &nbsp;|&nbsp; **License:** MIT &nbsp;|&nbsp; **Platforms:** Claude Code · Cursor · OpenAI Codex
+**Version:** 1.1.0 &nbsp;|&nbsp; **License:** MIT &nbsp;|&nbsp; **Platforms:** Claude Code · Cursor · OpenAI Codex
 
 > A single command that bootstraps an AI agent harness for any project —
 > works identically on Claude Code, Cursor, and OpenAI Codex.
@@ -52,6 +52,21 @@ Running `/init-harness` in your project generates **8 files** tailored to your c
 | `scripts/init.ps1` | PowerShell session bootstrap | All platforms (Windows) |
 | `.claude/settings.json` | Permissions + session-end hook | Claude Code |
 
+**Repo structure installed:**
+```
+your-project/
+├── CLAUDE.md                ← Claude Code reads this automatically
+├── AGENTS.md                ← Codex reads this automatically
+├── .cursorrules             ← Cursor reads this automatically
+├── agent-progress.md        ← shared session state
+├── agent-features.json      ← feature registry
+├── scripts/
+│   ├── init.sh
+│   └── init.ps1
+└── .claude/
+    └── settings.json
+```
+
 Everything is derived from your actual project — no generic filler.
 
 ---
@@ -90,9 +105,15 @@ Open any project in your AI tool and type the command:
 
 | Platform | Command | How to invoke |
 |----------|---------|--------------|
-| **Claude Code** | `/init-harness` | Type in the chat input |
+| **Claude Code** | `/init-harness` | Type `/` in the chat input |
 | **Cursor** | `/init-harness` | Type `/` in the AI chat panel |
-| **OpenAI Codex** | `/prompts:init-harness` | Type in the Codex terminal |
+| **OpenAI Codex** | `$init-harness` | Type `$` in the Codex terminal |
+
+> **Codex note:** Codex uses a `skills/` format natively (`SKILL.md` with YAML frontmatter).
+> The installer places the skill at `~/.agents/skills/init-harness/SKILL.md` (current standard)
+> and `~/.codex/skills/init-harness/SKILL.md` (legacy compatibility).
+> The repo also ships `skills/init-harness/SKILL.md` so Codex can load it
+> directly when you point it to the GitHub URL.
 
 The agent will:
 1. Analyze your project (language, framework, git history, existing files)
@@ -298,9 +319,15 @@ Abre cualquier proyecto en tu herramienta de IA y escribe el comando:
 
 | Plataforma | Comando | Cómo invocarlo |
 |------------|---------|----------------|
-| **Claude Code** | `/init-harness` | Escríbelo en el input del chat |
+| **Claude Code** | `/init-harness` | Escribe `/` en el input del chat |
 | **Cursor** | `/init-harness` | Escribe `/` en el panel de chat de IA |
-| **OpenAI Codex** | `/prompts:init-harness` | Escríbelo en la terminal de Codex |
+| **OpenAI Codex** | `$init-harness` | Escribe `$` en la terminal de Codex |
+
+> **Nota Codex:** Codex usa el formato nativo `skills/` (`SKILL.md` con frontmatter YAML).
+> El instalador coloca el skill en `~/.agents/skills/init-harness/SKILL.md` (estándar actual)
+> y `~/.codex/skills/init-harness/SKILL.md` (compatibilidad legacy).
+> El repo también incluye `skills/init-harness/SKILL.md` para que Codex lo cargue
+> directamente cuando le apuntas a la URL de GitHub.
 
 El agente:
 1. Analizará tu proyecto (lenguaje, framework, historial git, archivos existentes)
@@ -396,6 +423,12 @@ MIT — uso libre en proyectos personales y comerciales.
 ---
 
 ### Changelog
+
+#### v1.1.0 — 2026-06-04
+- Agregada estructura nativa `skills/init-harness/SKILL.md` para OpenAI Codex
+- Instalador actualizado: instala en `~/.agents/skills/` (estándar) y `~/.codex/skills/` (legacy)
+- Comando Codex corregido de `/prompts:init-harness` a `$init-harness`
+- Instalación también en `~/.claude/skills/` (cross-agent standard)
 
 #### v1.0.0 — 2026-06-04
 - Lanzamiento inicial
