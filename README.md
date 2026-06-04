@@ -95,7 +95,33 @@ The installer copies `init-harness.md` to the commands directory of each platfor
 |----------|---------|
 | Claude Code | `~/.claude/commands/init-harness.md` |
 | Cursor | `~/.cursor/commands/init-harness.md` |
-| OpenAI Codex | `~/.codex/prompts/init-harness.md` |
+| OpenAI Codex | `~/.agents/skills/init-harness/SKILL.md` |
+
+---
+
+### Alternative: No installation — just send the URL
+
+You don't need to install anything. You can give any AI agent the GitHub URL and
+tell it to implement the harness directly in your project:
+
+> *"Implement this in my project: https://github.com/dhinojosac/init-harness"*
+
+The agent will fetch the repo, read `init-harness.md` (or `skills/init-harness/SKILL.md`
+if it supports the skills format), and execute all 10 steps to generate the harness files.
+
+**Works with any LLM or agent that can browse URLs:**
+
+| Tool | What to say |
+|------|------------|
+| Claude Code | `Implement this: https://github.com/dhinojosac/init-harness` |
+| Cursor | `Implement this: https://github.com/dhinojosac/init-harness` |
+| OpenAI Codex | `Implement this: https://github.com/dhinojosac/init-harness` |
+| ChatGPT / Claude.ai | Paste the URL + "implement this harness in my project" |
+| Any agent with web access | Same — paste the URL and ask it to implement |
+
+> **When to use this vs. the installer:**
+> - **Install once** → best when you work across many projects; `/init-harness` is always one keystroke away
+> - **Send the URL** → best for a one-off project, a teammate's machine, or any agent that doesn't support slash commands natively
 
 ---
 
@@ -309,7 +335,33 @@ El instalador copia `init-harness.md` al directorio de comandos de cada platafor
 |------------|----------|
 | Claude Code | `~/.claude/commands/init-harness.md` |
 | Cursor | `~/.cursor/commands/init-harness.md` |
-| OpenAI Codex | `~/.codex/prompts/init-harness.md` |
+| OpenAI Codex | `~/.agents/skills/init-harness/SKILL.md` |
+
+---
+
+### Alternativa: Sin instalación — solo envía la URL
+
+No necesitas instalar nada. Puedes darle a cualquier agente de IA la URL del repo de
+GitHub y pedirle que implemente el harness directamente en tu proyecto:
+
+> *"Implementa esto en mi proyecto: https://github.com/dhinojosac/init-harness"*
+
+El agente buscará el repo, leerá `init-harness.md` (o `skills/init-harness/SKILL.md`
+si soporta el formato skills), y ejecutará los 10 pasos para generar los archivos del harness.
+
+**Funciona con cualquier LLM o agente que pueda navegar URLs:**
+
+| Herramienta | Qué decirle |
+|-------------|------------|
+| Claude Code | `Implementa esto: https://github.com/dhinojosac/init-harness` |
+| Cursor | `Implementa esto: https://github.com/dhinojosac/init-harness` |
+| OpenAI Codex | `Implementa esto: https://github.com/dhinojosac/init-harness` |
+| ChatGPT / Claude.ai | Pega la URL + "implementa este harness en mi proyecto" |
+| Cualquier agente con acceso web | Igual — pega la URL y pedile que lo implemente |
+
+> **Cuándo usar esto vs. el instalador:**
+> - **Instalar una vez** → mejor si trabajás en muchos proyectos; `/init-harness` siempre a un teclazo
+> - **Enviar la URL** → mejor para un proyecto puntual, la máquina de un compañero, o cualquier agente que no soporte slash commands nativamente
 
 ---
 
