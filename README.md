@@ -39,15 +39,21 @@ Every time you open a project in an AI coding tool, the agent starts with **zero
 
 ### What it creates
 
-Running `/init-harness` in your project generates **8 files** tailored to your codebase:
+Running `/init-harness` in your project generates **13 files** tailored to your codebase:
 
 | File | Purpose | Used by |
 |------|---------|---------|
-| `CLAUDE.md` | Full harness documentation | Claude Code (auto-loaded) |
+| `CLAUDE.md` | Lean harness entry point (~50 lines) | Claude Code (auto-loaded) |
 | `AGENTS.md` | Same content, different platform note | OpenAI Codex (auto-loaded) |
-| `.cursorrules` | Condensed rules | Cursor (auto-loaded) |
-| `agent-progress.md` | Cross-session state tracker | All platforms |
-| `agent-features.json` | Feature registry with pass/fail status | All platforms |
+| `.cursorrules` | Condensed rules (~45 lines) | Cursor (auto-loaded) |
+| `.agents/harness.json` | Version metadata — enables upgrade detection | init-harness |
+| `.agents/refs/stack.md` | Tech stack, structure, env vars | On demand |
+| `.agents/refs/patterns.md` | Architectural patterns | On demand |
+| `.agents/refs/rules.md` | Full coding rules | On demand |
+| `.agents/refs/failures.md` | Common failure modes | On demand |
+| `.agents/progress.md` | Rolling-window session state | All platforms |
+| `.agents/features.json` | Lean feature registry (no steps) | All platforms |
+| `.agents/features-detail.json` | Feature steps, read on demand | All platforms |
 | `scripts/init.sh` | POSIX session bootstrap | All platforms (Linux/Mac) |
 | `scripts/init.ps1` | PowerShell session bootstrap | All platforms (Windows) |
 | `.claude/settings.json` | Permissions + session-end hook | Claude Code |
@@ -55,11 +61,19 @@ Running `/init-harness` in your project generates **8 files** tailored to your c
 **Repo structure installed:**
 ```
 your-project/
-├── CLAUDE.md                ← Claude Code reads this automatically
-├── AGENTS.md                ← Codex reads this automatically
-├── .cursorrules             ← Cursor reads this automatically
-├── agent-progress.md        ← shared session state
-├── agent-features.json      ← feature registry
+├── CLAUDE.md                    ← Claude Code reads this automatically (~50 ln)
+├── AGENTS.md                    ← Codex reads this automatically
+├── .cursorrules                 ← Cursor reads this automatically (~45 ln)
+├── .agents/
+│   ├── refs/
+│   │   ├── stack.md             ← stack, structure, env vars
+│   │   ├── patterns.md          ← architectural patterns
+│   │   ├── rules.md             ← full coding rules
+│   │   └── failures.md          ← common failure modes
+│   ├── archive/                 ← old sessions and done features
+│   ├── progress.md              ← rolling-window session state
+│   ├── features.json            ← lean feature registry
+│   └── features-detail.json     ← steps per feature (read on demand)
 ├── scripts/
 │   ├── init.sh
 │   └── init.ps1
@@ -186,17 +200,18 @@ The command runs 10 steps:
 
 | Step | What happens |
 |------|-------------|
-| 0. Analysis | Reads git history, manifest files, source structure, existing README |
-| 1. Directories | Creates `scripts/` and `.claude/` |
-| 2. `CLAUDE.md` | Full documentation: stack, patterns, rules, startup/end protocols |
-| 3. `AGENTS.md` | Copy of CLAUDE.md with Codex platform note |
-| 4. `.cursorrules` | Condensed version (≤60 lines) for Cursor |
-| 5. `agent-progress.md` | Seeded with current git state and uncommitted files |
-| 6. `agent-features.json` | Features inferred from routes, controllers, commits, README |
-| 7. `scripts/init.sh` | POSIX bootstrap: install deps, typecheck, print context |
-| 8. `scripts/init.ps1` | PowerShell equivalent with native JSON parsing |
-| 9. `.claude/settings.json` | Pre-approved commands + session-end checklist hook |
-| 10. Report | Summary table with next steps |
+| 0. Analysis | Reads git history (or offers `git init` if absent), manifest files, source structure, README |
+| 1. Directories | Creates `scripts/`, `.claude/`, `.agents/refs/`, `.agents/archive/` |
+| 2. `CLAUDE.md` | Lean entry point ≤55 lines: stack summary, startup/end protocols, links to refs |
+| 3. `.agents/refs/` | 4 detail files: stack, patterns, rules, failures — read on demand, not every session |
+| 4. `AGENTS.md` | Copy of CLAUDE.md with Codex platform note |
+| 5. `.cursorrules` | Condensed version (≤45 lines) for Cursor |
+| 6. `.agents/progress.md` | Rolling-window session state: current + last session + archive link |
+| 7. `.agents/features.json` + `features-detail.json` | Lean registry + steps on demand |
+| 8. `scripts/init.sh` | POSIX bootstrap: install deps, typecheck, git state, print context |
+| 9. `scripts/init.ps1` | PowerShell equivalent with native JSON parsing |
+| 10. `.claude/settings.json` | Risk-based permissions + session-end checklist hook |
+| 11. Report | Summary table with next steps |
 
 ---
 
@@ -233,9 +248,10 @@ Next session starts fully informed  ←── loop
 
 ### Requirements
 
-- A project managed with `git`
 - One of: Claude Code CLI, Cursor, or OpenAI Codex CLI
 - Any language/framework — the command detects the stack automatically
+- `git` is recommended but not required — if absent, the harness offers to initialize it
+  and continues in degraded mode if declined
 
 ---
 
@@ -305,18 +321,24 @@ Cada vez que abres un proyecto en una herramienta de IA, el agente comienza con 
 
 ### Qué crea
 
-Al ejecutar `/init-harness` en tu proyecto se generan **8 archivos** adaptados a tu código:
+Al ejecutar `/init-harness` en tu proyecto se generan **13 archivos** adaptados a tu código:
 
 | Archivo | Propósito | Usado por |
 |---------|----------|----------|
-| `CLAUDE.md` | Documentación completa del harness | Claude Code (carga automática) |
+| `CLAUDE.md` | Entry point liviano (~50 líneas) | Claude Code (carga automática) |
 | `AGENTS.md` | Mismo contenido, nota de plataforma diferente | OpenAI Codex (carga automática) |
-| `.cursorrules` | Reglas condensadas | Cursor (carga automática) |
-| `agent-progress.md` | Registro de estado entre sesiones | Todas las plataformas |
-| `agent-features.json` | Registro de funcionalidades con estado pass/fail | Todas las plataformas |
+| `.cursorrules` | Reglas condensadas (~45 líneas) | Cursor (carga automática) |
+| `.agents/harness.json` | Metadatos de versión — permite detectar upgrades | init-harness |
+| `.agents/refs/stack.md` | Stack, estructura, variables de entorno | On demand |
+| `.agents/refs/patterns.md` | Patrones arquitectónicos | On demand |
+| `.agents/refs/rules.md` | Reglas de código completas | On demand |
+| `.agents/refs/failures.md` | Modos de fallo comunes | On demand |
+| `.agents/progress.md` | Estado de sesión con ventana deslizante | Todas las plataformas |
+| `.agents/features.json` | Registro de features liviano (sin steps) | Todas las plataformas |
+| `.agents/features-detail.json` | Steps por feature, se leen on demand | Todas las plataformas |
 | `scripts/init.sh` | Bootstrap de sesión POSIX | Todas las plataformas (Linux/Mac) |
 | `scripts/init.ps1` | Bootstrap de sesión PowerShell | Todas las plataformas (Windows) |
-| `.claude/settings.json` | Permisos + hook de fin de sesión | Claude Code |
+| `.claude/settings.json` | Permisos por clase de riesgo + hook de fin | Claude Code |
 
 Todo se deriva de tu proyecto real — sin relleno genérico.
 
@@ -417,17 +439,18 @@ El comando ejecuta 10 pasos:
 
 | Paso | Qué ocurre |
 |------|-----------|
-| 0. Análisis | Lee historial git, archivos de manifiesto, estructura fuente, README existente |
-| 1. Directorios | Crea `scripts/` y `.claude/` |
-| 2. `CLAUDE.md` | Documentación completa: stack, patrones, reglas, protocolos de inicio/fin |
-| 3. `AGENTS.md` | Copia de CLAUDE.md con nota de plataforma Codex |
-| 4. `.cursorrules` | Versión condensada (≤60 líneas) para Cursor |
-| 5. `agent-progress.md` | Precargado con el estado git actual y archivos sin commit |
-| 6. `agent-features.json` | Funcionalidades inferidas de rutas, controladores, commits, README |
-| 7. `scripts/init.sh` | Bootstrap POSIX: instala deps, typecheck, imprime contexto |
-| 8. `scripts/init.ps1` | Equivalente PowerShell con parsing nativo de JSON |
-| 9. `.claude/settings.json` | Comandos pre-aprobados + hook de checklist de fin de sesión |
-| 10. Reporte | Tabla resumen con próximos pasos |
+| 0. Análisis | Lee historial git (u ofrece `git init` si no existe), manifiestos, estructura, README |
+| 1. Directorios | Crea `scripts/`, `.claude/`, `.agents/refs/`, `.agents/archive/` |
+| 2. `CLAUDE.md` | Entry point liviano ≤55 líneas: resumen de stack, protocolos, links a refs |
+| 3. `.agents/refs/` | 4 archivos de detalle: stack, patrones, reglas, fallos — se leen on demand |
+| 4. `AGENTS.md` | Copia de CLAUDE.md con nota de plataforma Codex |
+| 5. `.cursorrules` | Versión condensada (≤45 líneas) para Cursor |
+| 6. `.agents/progress.md` | Ventana deslizante: sesión actual + última sesión + link al archivo |
+| 7. `.agents/features.json` + `features-detail.json` | Registro liviano + steps on demand |
+| 8. `scripts/init.sh` | Bootstrap POSIX: instala deps, typecheck, estado git, imprime contexto |
+| 9. `scripts/init.ps1` | Equivalente PowerShell con parsing nativo de JSON |
+| 10. `.claude/settings.json` | Permisos por clase de riesgo + hook de checklist de fin de sesión |
+| 11. Reporte | Tabla resumen con próximos pasos |
 
 ---
 
@@ -464,9 +487,10 @@ La próxima sesión comienza completamente informada  ←── ciclo
 
 ### Requisitos
 
-- Un proyecto gestionado con `git`
 - Alguna de: Claude Code CLI, Cursor, o OpenAI Codex CLI
 - Cualquier lenguaje/framework — el comando detecta el stack automáticamente
+- `git` es recomendado pero no obligatorio — si no está, el harness ofrece inicializarlo
+  y continúa en modo degradado si se rechaza
 
 ---
 
@@ -497,6 +521,18 @@ MIT — uso libre en proyectos personales y comerciales.
 ---
 
 ### Changelog
+
+#### v1.3.0 — 2026-06-12
+
+- **CLAUDE.md is now lean (≤55 lines)** — full details moved to `.agents/refs/` (stack, patterns, rules, failures), loaded on demand instead of every session
+- **Session startup = one command** — protocol reduced to `bash scripts/init.sh` / `powershell scripts/init.ps1`; script output is structured and controlled
+- **`.agents/` replaces root agent files** — `agent-progress.md` → `.agents/progress.md`, `agent-features.json` → `.agents/features.json`; root stays clean
+- **features.json split into two** — lean registry (no steps, ~1KB) for session startup + `features-detail.json` for steps read on demand per feature
+- **progress.md rolling window** — fixed 3-section structure (current / last / archive link); bounded size, archive to `.agents/archive/`
+- **Git detection + recovery** — STEP 0 detects missing git, offers `git init` + optional remote, continues in degraded mode if declined
+- **Risk-based settings.json** — `git push` excluded from auto-allow; `cat .agents/*` replaces individual file entries
+- **Harness assumptions note** — final constraint reminds that scaffolding should be removed as model capability improves
+- **Version detection + upgrade flow** — STEP 0 reads `.agents/harness.json`; detects if init-harness is already installed, offers upgrade, migrates data from v1.2.0 (root files → `.agents/`)
 
 #### v1.2.0 — 2026-06-04
 - Cursor: migrado de `commands/` a `skills/` (nuevo estándar); legacy `commands/` se mantiene como fallback
