@@ -3,7 +3,7 @@
 # https://github.com/dhinojosac/init-harness
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="2.0.0"
 CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
 banner()   { echo -e "\n${CYAN}${BOLD}▸ $1${NC}"; }
 ok()       { echo -e "  ${GREEN}✓${NC} $1"; }

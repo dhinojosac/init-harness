@@ -1,335 +1,338 @@
 ---
-description: Initialize the AI agent harness for any project — creates CLAUDE.md, AGENTS.md, .cursorrules, agent-features.json, agent-progress.md, and init scripts tailored to the current codebase
+description: Initialize the AI agent harness for any project — generates a canonical AGENTS.md (single source of truth), CLAUDE.md that imports it, scoped .cursor/rules/*.mdc, agent-features.json, an agent-progress.md handoff, init scripts, and .claude/settings.json with enforcement hooks, all tailored to the current codebase
 argument-hint: (optional) override project name
 ---
 
 # /init-harness
 
-Initialize the AI Agent Harness for the current project, based on Anthropic's
-"Effective Harnesses for Long-Running Agents" best practices.
+Initialize the AI Agent Harness for the current project.
 
-Creates a complete cross-platform harness that works identically on
-**Claude Code**, **Cursor**, and **OpenAI Codex** without any reconfiguration.
+`init-harness` is a **one-shot generator** (run once per project) that installs a
+**recurring session workflow** (runs every session). The two are different things —
+do not confuse the generator with the harness it produces.
 
-Optional argument passed via `$ARGUMENTS`: custom project name override.
+Optional argument via `$ARGUMENTS`: custom project name override.
 
----
+Design philosophy (from current harness research — see `docs/HARNESS-RESEARCH.md`):
 
-## STEP 0 — Pre-flight analysis (run ALL in parallel, collect results before creating any file)
+- **Less prose, more enforcement.** Rules in markdown are followed ~80% of the time;
+  hard constraints go in **hooks**, not documentation.
+- **One source of truth.** `AGENTS.md` is canonical; `CLAUDE.md` imports it. Never
+  copy identical content into multiple files.
+- **Pilot's checklist, not a style guide.** Keep generated docs lean (~60 lines).
+  Every line should be traceable to a real fact about the project, not speculation.
+- **Just-in-time context.** Hand the agent lightweight identifiers and let it load
+  detail on demand — do not pre-dump everything every session.
+- **Handoffs carry decisions, not just summaries.**
 
-1. `pwd` — confirm working directory
-2. `git log --oneline -10` — understand recent history and naming conventions
-3. `git status` — see what is staged, modified, and untracked
-4. `git branch --show-current` — current branch name
-5. Read the root manifest: `package.json` / `Cargo.toml` / `pyproject.toml` / `go.mod` / `composer.json` / `build.gradle` — detect language and package manager
-6. List top-level directories, excluding: `.git`, `node_modules`, `__pycache__`, `vendor`, `dist`, `.next`, `target`, `.turbo`, `coverage`
-7. Check if any harness files already exist: `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `agent-progress.md`, `agent-features.json`, `.claude/settings.json`
-   — If ANY exist: stop, report what was found, and ask the user whether to overwrite or skip each one before continuing
-8. Read the first 80 lines of `README.md` (if present) for project description
-9. Read `src/`, `app/`, `lib/`, or equivalent entry-point directories (one level deep) to understand domain entities
-
-From this analysis, determine:
-- **Project name** — from manifest name field, or repo folder name if not found
-- **Primary language** — TypeScript, Python, Go, Rust, etc.
-- **Framework** — Next.js, FastAPI, Gin, Axum, Django, Rails, Laravel, etc.
-- **Package manager** — pnpm, npm, yarn, pip/uv, cargo, go, composer, gradle
-- **Monorepo?** — yes/no; structure if yes
-- **Key scripts** — dev, build, test, lint, typecheck, migrate, seed, etc.
-- **Infrastructure stack** — auth system, database, ORM, deployment target
-- **Multi-tenant?** — yes/no; tenant discriminator field if yes
-- **Test strategy** — unit, integration, e2e, none
+Works across **Claude Code**, **Cursor**, and **OpenAI Codex**.
 
 ---
 
-## STEP 1 — Create required directories
+## STEP 0 — Pre-flight gate (run, then branch on the results before creating ANY file)
+
+Run these and decide the path. Do **not** assume the happy path.
 
 ```bash
-mkdir -p scripts
-mkdir -p .claude
+pwd
+git rev-parse --is-inside-work-tree 2>/dev/null   # is this a git repo at all?
+git rev-parse HEAD 2>/dev/null                     # are there any commits?
+```
+
+Then resolve each gate:
+
+**Gate A — Version control**
+- If `git rev-parse --is-inside-work-tree` fails → **not a git repo.** Stop and ask:
+  *"This project isn't under git. The harness session protocol relies on git. Run
+  `git init` now?"* If yes, run it. If the user declines, proceed but skip every
+  git-dependent step and note the limitation in the generated files.
+- If it is a repo but `git rev-parse HEAD` fails → **no commits yet.** Skip history
+  analysis (`git log`); seed everything else normally.
+- If both succeed → run `git log --oneline -10`, `git status`, `git branch --show-current`.
+
+**Gate B — Project type (greenfield vs brownfield)**
+- Look for a manifest: `package.json` / `Cargo.toml` / `pyproject.toml` / `go.mod` /
+  `composer.json` / `build.gradle`.
+- If **none found and the repo is essentially empty** → **greenfield mode.** Ask the
+  user for the intended stack (language, framework, package manager) instead of
+  emitting `# TODO` everywhere. Generate a minimal seed harness.
+- If a manifest exists → **brownfield mode** (happy path). Continue analysis below.
+
+**Gate C — Existing harness files**
+Check for: `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/`,
+`agent-progress.md`, `agent-features.json`, `.claude/settings.json`.
+- For each that exists, look for the stamp `<!-- generated-by: init-harness vX -->`
+  (or `"_generatedBy": "init-harness"` in JSON).
+  - **Stamped (we generated it)** → safe to regenerate; offer a section-level upgrade.
+  - **Unstamped (human-authored)** → do **not** clobber. Back it up to `*.bak` and
+    ask before overwriting. This is especially important for hand-written `AGENTS.md`.
+
+**Gate D — Monorepo**
+- If the manifest declares workspaces (pnpm-workspace.yaml, `workspaces` field, Nx,
+  Turbo, Lerna) → ask: place a single root harness, or per-package `AGENTS.md`?
+  Default to root + a short per-package pointer.
+
+**Gate E — Team vs solo (commit policy)**
+- Ask (or infer from a remote being present): should `agent-progress.md` and
+  `.claude/settings.json` be committed (shared team state) or gitignored (personal)?
+- Always generate/append `CLAUDE.local.md` to `.gitignore` for personal overrides.
+
+Then do the brownfield analysis (skip parts gated out above):
+- Read the manifest → language, framework, package manager.
+- List top-level dirs, excluding: `.git`, `node_modules`, `__pycache__`, `vendor`,
+  `dist`, `.next`, `target`, `.turbo`, `coverage`.
+- Read first 80 lines of `README.md` if present.
+- Read `src/` / `app/` / `lib/` one level deep for domain entities.
+- Detect: monorepo?, key scripts (dev/build/test/lint/typecheck/migrate/seed),
+  infra (auth, db, ORM, deploy), multi-tenant?, test strategy.
+
+**Package-manager detection chain** (first hit wins):
+`CLAUDE_PACKAGE_MANAGER` env → `packageManager` field in package.json →
+lockfile (pnpm-lock.yaml / yarn.lock / package-lock.json / bun.lockb) →
+first available in PATH.
+
+---
+
+## STEP 1 — Create directories
+
+```bash
+mkdir -p scripts .claude .cursor/rules
 ```
 
 ---
 
-## STEP 2 — Generate `CLAUDE.md`
+## STEP 2 — Generate `AGENTS.md` (CANONICAL — single source of truth)
 
-Write a `CLAUDE.md` tailored to THIS project. Replace every `{{placeholder}}` with
-real values from the Step 0 analysis. Every section must reflect the actual project —
-no generic filler. Write `# TODO: fill in` for any value that cannot be determined.
+This is the one file that holds the real content. Keep it a **pilot's checklist,
+≈60 lines max**. Every line must trace to a fact from Step 0 — no generic filler.
+Detail that doesn't fit goes into `.cursor/rules/*.mdc` (Step 4), not here.
 
 ```markdown
-# {{PROJECT_NAME}} — AI Agent Harness
+<!-- generated-by: init-harness v2 -->
+# {{PROJECT_NAME}} — Agent Harness
 
-> **Platform coverage:** Auto-loaded by **Claude Code**.
-> Identical content in `AGENTS.md` (OpenAI Codex) and `.cursorrules` (Cursor).
-> Keep all three in sync when updating.
+> Canonical agent instructions. `CLAUDE.md` imports this file; Cursor reads it
+> natively. Edit **here**, not in copies.
 
----
+## Stack
+{{ONE_LINE_STACK}}  — e.g. "TypeScript / Next.js 15 / pnpm / Postgres+Prisma"
 
-## 1. Session Startup Protocol (MANDATORY — every session)
+## Commands
+- dev:        {{DEV_CMD}}
+- build:      {{BUILD_CMD}}
+- test:       {{TEST_CMD}}
+- typecheck:  {{TYPECHECK_CMD}}
+- lint:       {{LINT_CMD}}
 
-```bash
-# 1. Confirm location
-pwd   # must end with: {{REPO_FOLDER_NAME}}
+## Session start (just-in-time — do NOT cat everything)
+1. Read `agent-progress.md` (the handoff) — it names what to load next.
+2. `git log --oneline -5 && git status`
+3. Pick the highest-priority `passes: false` entry in `agent-features.json`.
+4. Load only the files that entry points to.
 
-# 2. Read recent context
-cat agent-progress.md
+## Session end
+1. Run typecheck + lint + test (the hooks enforce this; don't skip).
+2. Commit in small atomic units: `type(scope): description`.
+3. Update `agent-progress.md` with **decisions made and why**, not just "what".
+4. Set `passes: true` ONLY after end-to-end verification (see Rules).
 
-# 3. Repo state
-git log --oneline -5
-git status
+## Rules (hard — enforced by hooks where marked 🔒)
+- 🔒 Never `git push --force` to main; never `rm -rf` outside the workspace.
+- Never mark a feature `passes: true` without real verification.
+- Never delete or rename entries in `agent-features.json`.
+- {{PROJECT_SPECIFIC_RULE_TRACEABLE_TO_A_FACT}}
 
-# 4. Bootstrap environment
-bash scripts/init.sh          # Linux / macOS
-powershell scripts/init.ps1   # Windows
-
-# 5. Pick next feature
-cat agent-features.json
-# Choose the highest-priority entry where "passes": false
+## Failure modes
+{{2-4 ROWS: symptom → fix, only ones real to THIS project}}
 ```
 
----
-
-## 2. Project Overview
-
-{{PROJECT_DESCRIPTION}}
+> Keep it tight. If a section would exceed the budget, move it to `.cursor/rules/`.
 
 ---
 
-## 3. Tech Stack
+## STEP 3 — Generate `CLAUDE.md` (imports the canonical file)
 
-| Layer | Choice | Version |
-|-------|--------|---------|
-{{TECH_STACK_ROWS}}
-
----
-
-## 4. Repository Structure
-
-```
-{{ANNOTATED_DIRECTORY_TREE}}
-```
-
----
-
-## 5. Development Commands
-
-```bash
-{{DEV_COMMANDS}}
-```
-
----
-
-## 6. Key Architectural Patterns
-
-{{PATTERNS}}
-
----
-
-## 7. Coding Rules
-
-{{RULES}}
-
-Always include:
-1. Small atomic commits — one logical change per commit
-2. Never mark a feature `"passes": true` without end-to-end verification
-3. Never remove entries from `agent-features.json` — only update `"passes"` status
-
----
-
-## 8. Environment Setup
-
-{{ENV_TABLE}}
-
----
-
-## 9. End of Session Protocol (MANDATORY — before stopping)
-
-```bash
-{{TYPECHECK_CMD}}
-{{LINT_CMD}}
-{{TEST_CMD}}
-git add <specific files>
-git commit -m "type(scope): description"
-# Then update agent-progress.md and agent-features.json
-```
-
----
-
-## 10. Commit Convention
-
-```
-feat(scope):     new capability
-fix(scope):      bug correction
-refactor(scope): no behavior change
-chore(scope):    deps, config, tooling
-docs(scope):     documentation only
-test(scope):     tests only
-```
-
----
-
-## 11. Common Failure Modes
-
-| Symptom | Likely Cause | Fix |
-|---------|-------------|-----|
-{{FAILURE_TABLE_ROWS}}
-```
-
----
-
-## STEP 3 — Generate `AGENTS.md`
-
-Copy `CLAUDE.md` verbatim. Change only the platform note in the header to:
-
-```
-> **Platform coverage:** Auto-loaded by **OpenAI Codex**.
-> Identical content in `CLAUDE.md` (Claude Code) and `.cursorrules` (Cursor).
-```
-
----
-
-## STEP 4 — Generate `.cursorrules`
-
-Write a condensed version (maximum 60 lines). Must include:
-
-1. **Session Start** — 3–4 steps as a numbered list
-2. **Session End** — 5 steps as a numbered list
-3. **Hard Rules** — all non-negotiable constraints, one line each
-4. **Stack** — one-line summary
-5. **Key Commands** — dev, typecheck, lint, test with actual command text
-6. Final line: `## See CLAUDE.md for full documentation`
-
----
-
-## STEP 5 — Generate `agent-progress.md`
+`CLAUDE.md` must NOT duplicate `AGENTS.md`. It imports it and adds only
+Claude-specific notes:
 
 ```markdown
-# Agent Progress Log
+<!-- generated-by: init-harness v2 -->
+@AGENTS.md
 
-> Update this file at the END of every session. Newest entry at the top.
+## Claude Code specifics
+- Permissions & enforcement hooks live in `.claude/settings.json`.
+- Use plan mode for changes touching {{SENSITIVE_PATH_OR_NONE}}.
+- {{ANY_CLAUDE_ONLY_NOTE_OR_OMIT}}
+```
+
+> The `@AGENTS.md` import is loaded by Claude Code at session start. This is why we
+> do not keep three synchronized copies anymore.
 
 ---
 
-## Session: {{TODAY_DATE}} — Harness Initialized
+## STEP 4 — Generate `.cursor/rules/*.mdc` (scoped, not a flat file)
 
-### Completed
-- Initialized AI agent harness (CLAUDE.md, AGENTS.md, .cursorrules,
-  agent-features.json, agent-progress.md, scripts/init.*, .claude/settings.json)
+Replace the legacy flat `.cursorrules` with scoped rule files. Each `.mdc` has
+frontmatter controlling WHEN it loads (just-in-time):
 
-### In Progress
-{{UNCOMMITTED_FILES_LIST}}
+`.cursor/rules/00-core.mdc` — always on, the non-negotiables:
+```markdown
+---
+alwaysApply: true
+---
+- Source of truth is AGENTS.md. Follow its session start/end protocol.
+- Hard rules: no force-push to main, no rm -rf outside workspace.
+- Commit in small atomic units; never fake `passes: true`.
+```
 
-### Next
-- Verify harness: bash scripts/init.sh (Linux/Mac) or powershell scripts/init.ps1 (Windows)
-- Pick first incomplete feature from agent-features.json and work on it
+`.cursor/rules/10-{{lang}}.mdc` — loads only on matching files:
+```markdown
+---
+globs: {{e.g. src/**/*.ts,src/**/*.tsx}}
+---
+{{language/framework conventions traceable to the codebase}}
+```
+
+`.cursor/rules/20-testing.mdc` — loads by relevance:
+```markdown
+---
+description: USE WHEN writing or modifying tests
+---
+{{test conventions: runner, location, patterns to follow}}
+```
+
+> Only create rule files you have real content for. Do not invent conventions.
+> A legacy flat `.cursorrules` with `## See AGENTS.md` may be written as a one-line
+> pointer for older Cursor versions, nothing more.
+
+---
+
+## STEP 5 — Generate `agent-progress.md` (handoff with decisions, not a summary)
+
+```markdown
+<!-- generated-by: init-harness v2 -->
+# Agent Progress — Handoff Log
+
+> Newest entry on top. A fresh agent reads ONLY the top entry to resume.
+> Record decisions and WHY, not just what changed (the trace, per Cognition).
+
+---
+
+## {{TODAY_DATE}} — Harness initialized
+
+### State
+- Harness generated. Repo: {{BRANCH}} @ {{SHORT_SHA_OR_"no commits yet"}}.
+
+### Decisions (and why)
+{{KEY_DECISIONS_FROM_GIT_AND_README — or "none yet" in greenfield}}
+
+### Next (actionable, with the files to load)
+- Verify harness: `bash scripts/init.sh` (or `powershell scripts/init.ps1`).
+- Pick the top `passes: false` feature in `agent-features.json` and load the files
+  it names.
 
 ### Blockers
-- None known
-
-### Key Decisions
-{{KEY_DECISIONS_FROM_GIT_AND_README}}
+- {{UNCOMMITTED_FILES_OR_"none"}}
 ```
 
 ---
 
-## STEP 6 — Generate `agent-features.json`
+## STEP 6 — Generate `agent-features.json` (seed minimal; verifiable done-criteria)
 
-Infer features from the codebase. Scan:
-- Route / page / controller files
-- README features section or changelog
-- Navigation components / sidebar / menu files
-- Existing test files
-- Recent commit messages
-
-Aim for **15–30 features** covering all major user-facing flows.
-Use realistic `"passes"` values: `true` for clearly shipped functionality,
-`false` for anything uncertain, in-progress, or untested.
+Derive features from real signals only (routes, controllers, nav, tests, README,
+commits). In **greenfield mode**, seed 3–5 intended features from the user's stated
+goal instead of inventing 20. Prefer a small, honest seed that the team ratchets
+upward over a speculative wall of features.
 
 ```json
 {
-  "version": "1.0",
-  "instructions": "NEVER remove or rename entries. ONLY set 'passes' to true after end-to-end verification. Pick the highest-priority 'passes: false' entry each session. Priority: 1=critical, 2=high, 3=medium, 4=low.",
+  "version": "2.0",
+  "_generatedBy": "init-harness",
+  "instructions": "Never remove or rename entries. Set 'passes' true ONLY after meeting 'done' end-to-end. A separate verification pass (not the agent that wrote the code) should confirm it. Pick the highest-priority passes:false entry each session. Priority 1=critical..4=low.",
   "features": [
     {
       "id": "{{category}}-001",
       "category": "{{category}}",
-      "priority": {{1-4}},
-      "description": "{{one sentence, subject-verb-object, testable in a real browser or terminal}}",
-      "steps": [
-        "{{step 1 — what a human would do}}",
-        "{{step 2}}",
-        "{{step 3 — what to verify as success}}"
-      ],
-      "passes": {{true|false}}
+      "priority": 1,
+      "description": "{{subject-verb-object, testable in a real browser/terminal}}",
+      "steps": ["{{human step 1}}", "{{step 2}}", "{{verify success}}"],
+      "done": "{{explicit, testable acceptance criterion — the 'sprint contract'}}",
+      "passes": false
     }
   ]
 }
 ```
 
-Rules:
-- Group by category (auth, routing, [domain-entities], ui, i18n, api, jobs, etc.)
-- Include an auth flow entry if authentication exists
-- Include a data-isolation entry if the project is multi-tenant
-- Mark in-progress items (from git status / recent commits) as `"passes": false`
-- Never invent features — derive everything from observed files and commits
+Rules: group by category (auth, routing, domain entities, ui, api, jobs…); include
+an auth entry if auth exists and a data-isolation entry if multi-tenant; mark
+in-progress items `passes:false`; never invent features.
 
 ---
 
-## STEP 7 — Generate `scripts/init.sh` (POSIX)
+## STEP 7 — Generate `scripts/init.sh` (POSIX; offload large output)
 
-Write a shell script that:
-1. Verifies working directory via root sentinel file (`package.json` / `Cargo.toml` / `go.mod` / etc.)
-2. Checks required runtime versions (node/python/go/rust — specific to the project)
-3. Warns if `.env.local` / `.env` / `.env.local` / equivalent config is missing
-4. Installs / fetches dependencies (`pnpm install` / `pip install -r requirements.txt` / `cargo fetch` / `go mod download`)
-5. Runs compile or type check
-6. Prints last 5 git commits and `git status --short`
-7. Prints last 20 lines of `agent-progress.md`
-8. Parses `agent-features.json` using `python3 -c` or `node -e` and prints all `"passes": false` features with their priority
+A bootstrap script that:
+1. Verifies the working dir via a root sentinel (manifest file).
+2. Checks required runtime versions for the detected stack.
+3. Warns if `.env` / `.env.local` is missing.
+4. Installs/fetches deps with the detected package manager.
+5. Runs typecheck/compile. **On success, print one line; on failure, print the
+   error.** (Silent success, verbose failure.)
+6. Writes the full git/context dump to `.harness-context.txt` and prints only a
+   2–3 line summary + the path (tool-call offloading — don't flood context).
+7. Prints the top `passes:false` features (parse JSON via `node -e`/`python3 -c`).
 
-Use ANSI color output. Exit code 1 on fatal errors, 0 on success.
-
----
-
-## STEP 8 — Generate `scripts/init.ps1` (PowerShell)
-
-Write the PowerShell equivalent with identical behavior:
-- `Write-Host` with `-ForegroundColor` for colors
-- `ConvertFrom-Json` to parse agent-features.json natively
-- `Get-Content ... | Select-Object -Last 20` instead of `tail`
-- `Test-Path` instead of `[ -f ]`
-- Print incomplete features as `[p{{priority}}] {{id}}: {{description}}`
+ANSI color; exit 1 on fatal errors, 0 otherwise.
 
 ---
 
-## STEP 9 — Generate `.claude/settings.json`
+## STEP 8 — Generate `scripts/init.ps1` (PowerShell equivalent)
+
+Identical behavior: `Write-Host -ForegroundColor`, `ConvertFrom-Json`,
+`Get-Content -Tail`, `Test-Path`, silent-success/verbose-failure, offload full dump
+to `.harness-context.txt`, print incomplete features as `[p{{priority}}] {{id}}: {{desc}}`.
+
+---
+
+## STEP 9 — Generate `.claude/settings.json` (ENFORCEMENT, not just an echo)
+
+Hooks enforce what prose cannot. Adapt the typecheck/lint commands to the stack.
 
 ```json
 {
+  "_generatedBy": "init-harness",
   "permissions": {
     "allow": [
+      "Read(//**)",
       "Bash({{PACKAGE_MANAGER_CMD}} *)",
-      "Bash(git log*)",
-      "Bash(git status*)",
-      "Bash(git diff*)",
-      "Bash(git branch*)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(cat agent-progress.md)",
-      "Bash(cat agent-features.json)",
-      "Bash(cat CLAUDE.md)",
-      "Bash(bash scripts/init.sh)",
-      "Bash(powershell scripts/init.ps1)"
+      "Bash(git log*)", "Bash(git status*)", "Bash(git diff*)",
+      "Bash(git branch*)", "Bash(git add *)", "Bash(git commit *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(rm -rf /*)"
     ]
   },
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{TYPECHECK_CMD}} > .harness-verify.log 2>&1 || (echo '⚠ typecheck failed — see .harness-verify.log'; tail -n 20 .harness-verify.log)"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"\n========================================\nSESSION END CHECKLIST:\n  1. {{TYPECHECK_CMD}}\n  2. {{LINT_CMD}}\n  3. git add <files> && git commit -m '...'\n  4. Update agent-progress.md\n  5. Update agent-features.json (passes: true if verified)\n========================================\""
+            "command": "echo 'Session end: typecheck+lint+test, commit atomically, update agent-progress.md with DECISIONS, set passes:true only if verified.'"
           }
         ]
       }
@@ -338,46 +341,44 @@ Write the PowerShell equivalent with identical behavior:
 }
 ```
 
-Replace `{{PACKAGE_MANAGER_CMD}}` with `pnpm` / `npm` / `pip` / `cargo` / `go` / `composer` as detected.
+Notes:
+- `deny` blocks the destructive commands deterministically (the 🔒 rules in AGENTS.md).
+- The `PostToolUse` hook is **silent on success, verbose on failure** — it only
+  speaks when typecheck breaks. Adjust the matcher/command to the stack; if a fast
+  typecheck isn't available, omit the PostToolUse hook rather than running something slow.
+- On Windows, Claude Code runs hook commands via the configured shell; keep commands
+  POSIX-ish or provide a `.ps1` wrapper if the project is Windows-only.
 
 ---
 
 ## STEP 10 — Final report
 
-After all files are created, output:
-
 ```
 ╔══════════════════════════════════════════════════╗
-║           init-harness — Setup Complete          ║
+║           init-harness v2 — Setup Complete       ║
 ╠══════════════════════════════════════════════════╣
 ║  Project : {{PROJECT_NAME}}                      ║
 ║  Stack   : {{LANGUAGE}} / {{FRAMEWORK}}          ║
+║  Mode    : {{brownfield|greenfield}}  Git: {{ok|initialized|none}}
 ╠══════════════════════════════════════════════════╣
-║  Files created:                                  ║
-║  ✓ CLAUDE.md            — Claude Code            ║
-║  ✓ AGENTS.md            — OpenAI Codex           ║
-║  ✓ .cursorrules         — Cursor                 ║
-║  ✓ agent-progress.md    — session state          ║
-║  ✓ agent-features.json  — {{N}} features ({{P}} passing, {{F}} to verify)
-║  ✓ scripts/init.sh      — POSIX bootstrap        ║
-║  ✓ scripts/init.ps1     — Windows bootstrap      ║
-║  ✓ .claude/settings.json — permissions + hook    ║
-╠══════════════════════════════════════════════════╣
-║  Next steps:                                     ║
-║  1. bash scripts/init.sh   (Linux/Mac)           ║
-║     powershell scripts/init.ps1  (Windows)       ║
-║  2. Review agent-features.json                   ║
-║  3. git add . && git commit -m "chore: init AI agent harness"
+║  ✓ AGENTS.md            — canonical (single source)
+║  ✓ CLAUDE.md            — @imports AGENTS.md
+║  ✓ .cursor/rules/*.mdc  — scoped rules
+║  ✓ agent-progress.md    — handoff (decisions)
+║  ✓ agent-features.json  — {{N}} features ({{P}} pass, {{F}} to verify)
+║  ✓ scripts/init.sh|ps1  — bootstrap
+║  ✓ .claude/settings.json — permissions + enforcement hooks
 ╚══════════════════════════════════════════════════╝
+Next: run scripts/init.* , review agent-features.json, then commit.
 ```
 
 ---
 
 ## IMPORTANT CONSTRAINTS
 
-- **Never fabricate** tech stack, features, or commands — derive everything from Step 0
-- **Never use generic filler** — be specific to the actual project
-- **If you cannot determine** a value, write `# TODO: fill in` rather than guessing
-- **If harness files already exist**, report them and ask before overwriting
-- **All files go in the current working directory** (project root), except `.claude/settings.json`
-- **The harness is for THIS project only** — never reference other projects
+- **Never fabricate** stack/features/commands — derive everything from Step 0.
+- **Never duplicate content** across files — `AGENTS.md` is canonical, others import/point.
+- **Never clobber human-authored files** — back up unstamped files and ask.
+- **If a value is unknown**, write `# TODO: fill in` (brownfield) or ask (greenfield).
+- **Hooks over prose** for hard constraints.
+- All files go in the project root, except `.claude/settings.json` and `.cursor/rules/`.

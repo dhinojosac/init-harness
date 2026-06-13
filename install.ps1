@@ -1,7 +1,7 @@
 # install.ps1 — init-harness installer for Windows (PowerShell)
 # https://github.com/dhinojosac/init-harness
 
-$VERSION = "1.2.0"
+$VERSION = "2.0.0"
 
 function Banner($msg) { Write-Host "`n> $msg" -ForegroundColor Cyan }
 function Ok($msg)     { Write-Host "  v $msg" -ForegroundColor Green }
