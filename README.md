@@ -1,6 +1,6 @@
 # init-harness
 
-**Version:** 1.2.0 &nbsp;|&nbsp; **License:** MIT &nbsp;|&nbsp; **Platforms:** Claude Code · Cursor · OpenAI Codex
+**Version:** 2.1.0 &nbsp;|&nbsp; **License:** MIT &nbsp;|&nbsp; **Platforms:** Claude Code · Cursor · OpenAI Codex
 
 > A single command that bootstraps an AI agent harness for any project —
 > works identically on Claude Code, Cursor, and OpenAI Codex.
@@ -39,40 +39,47 @@ Every time you open a project in an AI coding tool, the agent starts with **zero
 
 ### What it creates
 
-Running `/init-harness` in your project generates **13 files** tailored to your codebase:
+Running `/init-harness` in your project generates **16 files** tailored to your codebase:
 
 | File | Purpose | Used by |
 |------|---------|---------|
-| `CLAUDE.md` | Lean harness entry point (~50 lines) | Claude Code (auto-loaded) |
-| `AGENTS.md` | Same content, different platform note | OpenAI Codex (auto-loaded) |
-| `.cursorrules` | Condensed rules (~45 lines) | Cursor (auto-loaded) |
+| `AGENTS.md` | Canonical harness (~60 lines) — single source of truth | All platforms (auto-loaded) |
+| `CLAUDE.md` | Imports `AGENTS.md` + Claude-specific notes | Claude Code (auto-loaded) |
+| `.cursor/rules/00-core.mdc` | Hard rules, always loaded | Cursor (JIT) |
+| `.cursor/rules/10-{lang}.mdc` | Language conventions, loads on matching files | Cursor (JIT) |
+| `.cursor/rules/20-testing.mdc` | Test conventions, loads by relevance | Cursor (JIT) |
 | `.agents/harness.json` | Version metadata — enables upgrade detection | init-harness |
 | `.agents/refs/stack.md` | Tech stack, structure, env vars | On demand |
 | `.agents/refs/patterns.md` | Architectural patterns | On demand |
 | `.agents/refs/rules.md` | Full coding rules | On demand |
 | `.agents/refs/failures.md` | Common failure modes | On demand |
-| `.agents/progress.md` | Rolling-window session state | All platforms |
-| `.agents/features.json` | Lean feature registry (no steps) | All platforms |
+| `.agents/progress.md` | Rolling-window handoff (decisions + why) | All platforms |
+| `.agents/features.json` | Lean feature registry with acceptance criteria | All platforms |
 | `.agents/features-detail.json` | Feature steps, read on demand | All platforms |
 | `scripts/init.sh` | POSIX session bootstrap | All platforms (Linux/Mac) |
 | `scripts/init.ps1` | PowerShell session bootstrap | All platforms (Windows) |
-| `.claude/settings.json` | Permissions + session-end hook | Claude Code |
+| `.claude/settings.json` | Permissions + deny list + enforcement hooks | Claude Code |
 
 **Repo structure installed:**
 ```
 your-project/
-├── CLAUDE.md                    ← Claude Code reads this automatically (~50 ln)
-├── AGENTS.md                    ← Codex reads this automatically
-├── .cursorrules                 ← Cursor reads this automatically (~45 ln)
+├── AGENTS.md                    ← canonical (~60 ln) — all platforms read this
+├── CLAUDE.md                    ← Claude Code: @imports AGENTS.md + Claude notes
+├── .cursor/
+│   └── rules/
+│       ├── 00-core.mdc          ← always loaded (alwaysApply: true)
+│       ├── 10-{lang}.mdc        ← loads on matching file globs
+│       └── 20-testing.mdc       ← loads by relevance
 ├── .agents/
+│   ├── harness.json             ← version metadata
 │   ├── refs/
-│   │   ├── stack.md             ← stack, structure, env vars
-│   │   ├── patterns.md          ← architectural patterns
-│   │   ├── rules.md             ← full coding rules
-│   │   └── failures.md          ← common failure modes
-│   ├── archive/                 ← old sessions and done features
-│   ├── progress.md              ← rolling-window session state
-│   ├── features.json            ← lean feature registry
+│   │   ├── stack.md             ← stack, structure, env vars (on demand)
+│   │   ├── patterns.md          ← architectural patterns (on demand)
+│   │   ├── rules.md             ← full coding rules (on demand)
+│   │   └── failures.md          ← common failure modes (on demand)
+│   ├── archive/                 ← old sessions
+│   ├── progress.md              ← rolling-window handoff (decisions + why)
+│   ├── features.json            ← lean registry with done criteria
 │   └── features-detail.json     ← steps per feature (read on demand)
 ├── scripts/
 │   ├── init.sh
@@ -196,21 +203,21 @@ The agent will:
 
 ### How it works
 
-The command runs 10 steps:
+The command runs 11 steps:
 
 | Step | What happens |
 |------|-------------|
-| 0. Analysis | Reads git history (or offers `git init` if absent), manifest files, source structure, README |
-| 1. Directories | Creates `scripts/`, `.claude/`, `.agents/refs/`, `.agents/archive/` |
-| 2. `CLAUDE.md` | Lean entry point ≤55 lines: stack summary, startup/end protocols, links to refs |
-| 3. `.agents/refs/` | 4 detail files: stack, patterns, rules, failures — read on demand, not every session |
-| 4. `AGENTS.md` | Copy of CLAUDE.md with Codex platform note |
-| 5. `.cursorrules` | Condensed version (≤45 lines) for Cursor |
-| 6. `.agents/progress.md` | Rolling-window session state: current + last session + archive link |
-| 7. `.agents/features.json` + `features-detail.json` | Lean registry + steps on demand |
-| 8. `scripts/init.sh` | POSIX bootstrap: install deps, typecheck, git state, print context |
+| 0. Pre-flight gate | 5 checks: git init, greenfield/brownfield, existing harness + upgrade, monorepo, team/solo commit policy |
+| 1. Directories + `.agents/harness.json` | Creates `scripts/`, `.claude/`, `.cursor/rules/`, `.agents/refs/`, `.agents/archive/`; writes version stamp |
+| 2. `AGENTS.md` | Canonical ~60-line pilot's checklist: stack, commands, session protocol, hard rules |
+| 3. `CLAUDE.md` | `@AGENTS.md` import + Claude-specific notes; lists `.agents/refs/` for on-demand loading |
+| 4. `.cursor/rules/*.mdc` | Scoped rules with `alwaysApply`/`globs`/`description` frontmatter instead of flat file |
+| 5. `.agents/refs/` | 4 detail files: stack, patterns, rules, failures — read on demand, not every session |
+| 6. `.agents/progress.md` | Rolling-window handoff: decisions + why (not just summaries) |
+| 7. `.agents/features.json` + `features-detail.json` | Lean registry with acceptance criteria + steps on demand |
+| 8. `scripts/init.sh` | POSIX bootstrap: silent success/verbose failure; dumps context to file, not to agent context |
 | 9. `scripts/init.ps1` | PowerShell equivalent with native JSON parsing |
-| 10. `.claude/settings.json` | Risk-based permissions + session-end checklist hook |
+| 10. `.claude/settings.json` | `deny` list (force-push, rm -rf) + `PostToolUse` typecheck hook + session-end checklist |
 | 11. Report | Summary table with next steps |
 
 ---
@@ -221,24 +228,26 @@ The command runs 10 steps:
 Open project in AI tool
       │
       ▼
-AI reads CLAUDE.md / AGENTS.md / .cursorrules  ← automatic
+AI reads AGENTS.md (all platforms) + CLAUDE.md (Claude Code) ← automatic
       │
       ▼
-Session startup protocol:
-  → cat agent-progress.md       (reads last session)
-  → git log + git status        (checks repo state)
-  → bash scripts/init.sh        (bootstraps environment)
-  → cat agent-features.json     (picks next feature)
+Session startup — just-in-time:
+  → read .agents/progress.md     (handoff: decisions + what to load)
+  → git log -5 + git status
+  → bash scripts/init.sh         (deps, typecheck, pending features)
+  → pick highest-priority passes:false feature from .agents/features.json
+  → load only the detail files that feature needs (.agents/refs/)
       │
       ▼
 Agent works on the chosen feature
+(PostToolUse hook runs typecheck silently after each edit)
       │
       ▼
-Session end protocol:
-  → typecheck + lint
-  → git commit
-  → updates agent-progress.md
-  → updates agent-features.json
+Session end — enforced by hooks:
+  → typecheck + lint + test
+  → git commit (atomic)
+  → .agents/progress.md  →  record decisions + why (≤7 lines)
+  → .agents/features.json  →  passes:true only if done criterion met e2e
       │
       ▼
 Next session starts fully informed  ←── loop
@@ -321,24 +330,26 @@ Cada vez que abres un proyecto en una herramienta de IA, el agente comienza con 
 
 ### Qué crea
 
-Al ejecutar `/init-harness` en tu proyecto se generan **13 archivos** adaptados a tu código:
+Al ejecutar `/init-harness` en tu proyecto se generan **16 archivos** adaptados a tu código:
 
 | Archivo | Propósito | Usado por |
 |---------|----------|----------|
-| `CLAUDE.md` | Entry point liviano (~50 líneas) | Claude Code (carga automática) |
-| `AGENTS.md` | Mismo contenido, nota de plataforma diferente | OpenAI Codex (carga automática) |
-| `.cursorrules` | Reglas condensadas (~45 líneas) | Cursor (carga automática) |
+| `AGENTS.md` | Harness canónico (~60 líneas) — fuente única de verdad | Todas las plataformas (auto) |
+| `CLAUDE.md` | Importa `AGENTS.md` + notas específicas de Claude | Claude Code (auto) |
+| `.cursor/rules/00-core.mdc` | Reglas duras, siempre cargadas | Cursor (JIT) |
+| `.cursor/rules/10-{lang}.mdc` | Convenciones del lenguaje, carga por globs | Cursor (JIT) |
+| `.cursor/rules/20-testing.mdc` | Convenciones de tests, carga por relevancia | Cursor (JIT) |
 | `.agents/harness.json` | Metadatos de versión — permite detectar upgrades | init-harness |
 | `.agents/refs/stack.md` | Stack, estructura, variables de entorno | On demand |
 | `.agents/refs/patterns.md` | Patrones arquitectónicos | On demand |
 | `.agents/refs/rules.md` | Reglas de código completas | On demand |
 | `.agents/refs/failures.md` | Modos de fallo comunes | On demand |
-| `.agents/progress.md` | Estado de sesión con ventana deslizante | Todas las plataformas |
-| `.agents/features.json` | Registro de features liviano (sin steps) | Todas las plataformas |
+| `.agents/progress.md` | Handoff con decisiones + por qué | Todas las plataformas |
+| `.agents/features.json` | Registro liviano con criterios de aceptación | Todas las plataformas |
 | `.agents/features-detail.json` | Steps por feature, se leen on demand | Todas las plataformas |
-| `scripts/init.sh` | Bootstrap de sesión POSIX | Todas las plataformas (Linux/Mac) |
-| `scripts/init.ps1` | Bootstrap de sesión PowerShell | Todas las plataformas (Windows) |
-| `.claude/settings.json` | Permisos por clase de riesgo + hook de fin | Claude Code |
+| `scripts/init.sh` | Bootstrap POSIX: silencioso en éxito, verboso en fallo | Todas las plataformas (Linux/Mac) |
+| `scripts/init.ps1` | Bootstrap PowerShell equivalente | Todas las plataformas (Windows) |
+| `.claude/settings.json` | Lista deny + hooks de enforcement + checklist fin | Claude Code |
 
 Todo se deriva de tu proyecto real — sin relleno genérico.
 
@@ -435,21 +446,21 @@ El agente:
 
 ### Cómo funciona
 
-El comando ejecuta 10 pasos:
+El comando ejecuta 11 pasos:
 
 | Paso | Qué ocurre |
 |------|-----------|
-| 0. Análisis | Lee historial git (u ofrece `git init` si no existe), manifiestos, estructura, README |
-| 1. Directorios | Crea `scripts/`, `.claude/`, `.agents/refs/`, `.agents/archive/` |
-| 2. `CLAUDE.md` | Entry point liviano ≤55 líneas: resumen de stack, protocolos, links a refs |
-| 3. `.agents/refs/` | 4 archivos de detalle: stack, patrones, reglas, fallos — se leen on demand |
-| 4. `AGENTS.md` | Copia de CLAUDE.md con nota de plataforma Codex |
-| 5. `.cursorrules` | Versión condensada (≤45 líneas) para Cursor |
-| 6. `.agents/progress.md` | Ventana deslizante: sesión actual + última sesión + link al archivo |
-| 7. `.agents/features.json` + `features-detail.json` | Registro liviano + steps on demand |
-| 8. `scripts/init.sh` | Bootstrap POSIX: instala deps, typecheck, estado git, imprime contexto |
+| 0. Pre-flight gate | 5 checks: git, greenfield/brownfield, harness existente + upgrade, monorepo, política de commits |
+| 1. Directorios + `.agents/harness.json` | Crea `scripts/`, `.claude/`, `.cursor/rules/`, `.agents/refs/`, `.agents/archive/`; escribe stamp de versión |
+| 2. `AGENTS.md` | Checklist canónico ~60 líneas: stack, comandos, protocolo de sesión, reglas duras |
+| 3. `CLAUDE.md` | `@AGENTS.md` import + notas específicas de Claude; lista `.agents/refs/` para carga on demand |
+| 4. `.cursor/rules/*.mdc` | Reglas scoped con frontmatter `alwaysApply`/`globs`/`description` |
+| 5. `.agents/refs/` | 4 archivos de detalle: stack, patrones, reglas, fallos — se leen on demand |
+| 6. `.agents/progress.md` | Handoff con ventana deslizante: decisiones + por qué |
+| 7. `.agents/features.json` + `features-detail.json` | Registro liviano con criterios de aceptación + steps on demand |
+| 8. `scripts/init.sh` | Bootstrap POSIX: silencioso en éxito, verboso en fallo; vuelca contexto a archivo |
 | 9. `scripts/init.ps1` | Equivalente PowerShell con parsing nativo de JSON |
-| 10. `.claude/settings.json` | Permisos por clase de riesgo + hook de checklist de fin de sesión |
+| 10. `.claude/settings.json` | Lista `deny` + hook `PostToolUse` (typecheck) + checklist de fin de sesión |
 | 11. Reporte | Tabla resumen con próximos pasos |
 
 ---
@@ -521,6 +532,21 @@ MIT — uso libre en proyectos personales y comerciales.
 ---
 
 ### Changelog
+
+#### v2.1.0 — 2026-06-18
+
+- **Merged v1.3.0 `.agents/` structure with v2.0.0 enforcement philosophy**
+- **`AGENTS.md` is now canonical** — `CLAUDE.md` uses `@AGENTS.md` import; no more 3-way content duplication
+- **`.cursor/rules/*.mdc`** replaces flat `.cursorrules`; scoped via `alwaysApply`/`globs`/`description` frontmatter
+- **`deny` list in settings.json** — `git push --force` and `rm -rf /` blocked deterministically, not by prose
+- **`PostToolUse` hook** — typecheck runs silently after every edit; speaks only on failure
+- **5-gate pre-flight** — git, greenfield/brownfield, existing harness (with upgrade path from v1.2/v1.3/v2.0), monorepo, team/solo commit policy
+- **`done` field in features.json** — explicit testable acceptance criterion per feature; replaces self-grading
+- **Handoff carries decisions + why** — not just a "what I did" summary
+- **`init.sh`/`init.ps1` offload large output** to `.harness-context.txt`; silent success, verbose failure
+- **Generator stamps** on all generated files — distinguishes regenerable from human-authored
+- **Root stays clean** — `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/` at root; all agent state in `.agents/`
+- **`.agents/refs/` kept** from v1.3.0 — 4 on-demand detail files; not pre-loaded every session
 
 #### v1.3.0 — 2026-06-12
 

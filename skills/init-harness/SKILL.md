@@ -1,93 +1,125 @@
 ---
 name: init-harness
-description: Initialize the AI agent harness for any project. Generates CLAUDE.md, AGENTS.md, .cursorrules, .agents/ context directory, and bootstrap scripts — all tailored to the current codebase. Use when starting work on a new project or when the project lacks AI agent context files.
-version: "1.3.0"
+description: Initialize the AI agent harness for any project. Generates AGENTS.md (canonical), CLAUDE.md that imports it, scoped .cursor/rules/*.mdc, a .agents/ context directory with on-demand refs, enforcement hooks, and bootstrap scripts — all tailored to the current codebase. Use when starting work on a new project or when the project lacks AI agent context files.
+version: "2.1.0"
 disable-model-invocation: true
 ---
 
-Initialize the AI Agent Harness for the current project, based on Anthropic's
-"Effective Harnesses for Long-Running Agents" best practices.
+Initialize the AI Agent Harness for the current project.
 
-Creates a complete cross-platform harness that works identically on
-**Claude Code**, **Cursor**, and **OpenAI Codex** without any reconfiguration.
+`init-harness` is a **one-shot generator** (run once per project) that installs a
+**recurring session workflow** (runs every session). The two are different things —
+do not confuse the generator with the harness it produces.
 
----
+Optional argument via `$ARGUMENTS`: custom project name override.
 
-## STEP 0 — Pre-flight analysis (run ALL in parallel, collect results before creating any file)
+Design philosophy:
 
-1. `pwd` — confirm working directory
-2. `git log --oneline -10` — understand recent history and naming conventions
-   **If this command fails:** git is not initialized. Ask the user:
-   > "No git repository detected. Initialize one now? (recommended — the harness uses git for session tracking)"
-   - If **yes**: run `git init`, then ask "Add a remote URL? (paste URL or press Enter to skip)"
-     - If URL provided: run `git remote add origin <URL>`
-     - Continue normally
-   - If **no**: continue in **DEGRADED MODE** — note this in progress.md, skip all git
-     commands from both session protocols, remove git entries from settings.json allow list
-3. `git status` — see what is staged, modified, and untracked
-4. `git branch --show-current` — current branch name
-5. Read the root manifest: `package.json` / `Cargo.toml` / `pyproject.toml` / `go.mod` / `composer.json` / `build.gradle` — detect language and package manager
-6. List top-level directories, excluding: `.git`, `node_modules`, `__pycache__`, `vendor`, `dist`, `.next`, `target`, `.turbo`, `coverage`
-7. **Version and harness detection** — check in this order:
+- **Less prose, more enforcement.** Rules in markdown are followed ~80% of the time;
+  hard constraints go in **hooks**, not documentation.
+- **One source of truth.** `AGENTS.md` is canonical; `CLAUDE.md` imports it. Never
+  copy identical content into multiple files.
+- **Pilot's checklist, not a style guide.** Keep generated docs lean (~60 lines).
+  Every line must trace to a real fact about the project — no speculation.
+- **Just-in-time context.** Root files stay lean; detail lives in `.agents/refs/`
+  and is loaded on demand, not dumped every session.
+- **Handoffs carry decisions, not just summaries.**
 
-   **a. Check `.agents/harness.json`** (present from init-harness v1.3.0+):
-   - If found and `generator === "init-harness"`:
-     - If `version === "1.3.0"` (current): inform user, ask if they want to regenerate
-     - If `version < "1.3.0"`: show upgrade summary → offer upgrade (see UPGRADE MODE below)
-     - If `version > "1.3.0"`: warn that a newer harness was detected, ask before proceeding
-   - If found and `generator !== "init-harness"`: treat as unknown harness, warn and ask before overwriting
-
-   **b. `.agents/harness.json` not found, but root-level agent files exist**
-   (`agent-progress.md` or `agent-features.json` in the project root):
-   - This is init-harness **v1.2.0 or earlier**
-   - Offer upgrade: inform user of what changes (see UPGRADE MODE below)
-
-   **c. No harness detected** — proceed with fresh install
-
-   ---
-
-   **UPGRADE MODE** (from v1.2.0 → v1.3.0):
-   Before generating new files, migrate existing data:
-   1. If `agent-progress.md` exists in root → read its content → wrap it as the "Last Session"
-      block in the new `.agents/progress.md` rolling-window format → delete old file
-   2. If `agent-features.json` exists in root → split it:
-      - `.agents/features.json`: copy all entries but strip `"steps"` field from each
-      - `.agents/features-detail.json`: copy only `id` + `steps` for each entry
-      - Delete old file
-   3. Then regenerate all other files normally (CLAUDE.md slim, .agents/refs/, scripts/, settings.json)
-   4. Inform user: "Migrated from v1.2.0. Old root files removed."
-8. Read the first 80 lines of `README.md` (if present) for project description
-9. Read `src/`, `app/`, `lib/`, or equivalent entry-point directories (one level deep) to understand domain entities
-
-From this analysis, determine:
-- **Project name** — from manifest name field, or repo folder name if not found
-- **Primary language** — TypeScript, Python, Go, Rust, etc.
-- **Framework** — Next.js, FastAPI, Gin, Axum, Django, Rails, Laravel, etc.
-- **Package manager** — pnpm, npm, yarn, pip/uv, cargo, go, composer, gradle
-- **Monorepo?** — yes/no; structure if yes
-- **Key scripts** — dev, build, test, lint, typecheck, migrate, seed, etc.
-- **Infrastructure stack** — auth system, database, ORM, deployment target
-- **Multi-tenant?** — yes/no; tenant discriminator field if yes
-- **Test strategy** — unit, integration, e2e, none
-- **Git available?** — yes / degraded (no git)
+Works across **Claude Code**, **Cursor**, and **OpenAI Codex**.
 
 ---
 
-## STEP 1 — Create required directories and write harness metadata
+## STEP 0 — Pre-flight gate (run ALL checks, then branch on results before creating ANY file)
 
 ```bash
-mkdir -p scripts
-mkdir -p .claude
-mkdir -p .agents/refs
-mkdir -p .agents/archive
+pwd
+git rev-parse --is-inside-work-tree 2>/dev/null
+git rev-parse HEAD 2>/dev/null
+```
+
+Resolve each gate before proceeding:
+
+**Gate A — Version control**
+- `git rev-parse --is-inside-work-tree` fails → **no git repo.** Ask:
+  *"This project has no git repo. The harness session protocol relies on git. Initialize one now?"*
+  If yes: run `git init`, optionally `git remote add origin <URL>`.
+  If no: skip all git-dependent steps; note limitation in generated files (DEGRADED MODE).
+- Repo exists but `git rev-parse HEAD` fails → **no commits yet.** Skip `git log`; continue normally.
+- Both succeed → run `git log --oneline -10`, `git status`, `git branch --show-current`.
+
+**Gate B — Project type (greenfield vs brownfield)**
+- Look for a manifest: `package.json` / `Cargo.toml` / `pyproject.toml` / `go.mod` /
+  `composer.json` / `build.gradle`.
+- **No manifest + essentially empty repo** → **greenfield mode.** Ask the user for the
+  intended stack (language, framework, package manager) instead of emitting `# TODO`.
+  Generate a minimal seed harness from their answer.
+- **Manifest found** → **brownfield mode** (happy path). Continue analysis below.
+
+**Gate C — Existing harness detection**
+Check for `.agents/harness.json` first; then fall back to root-level agent files.
+
+- **`.agents/harness.json` found** and `generator === "init-harness"`:
+  - `version === "2.1.0"` (current) → inform user, ask if they want to regenerate.
+  - `version < "2.1.0"` → show upgrade summary (see UPGRADE MODE below); offer upgrade.
+  - `version > "2.1.0"` → warn, ask before proceeding.
+- **`.agents/harness.json` not found**, but `.agents/progress.md` or `.agents/features.json`
+  exist → this is **v1.3.0**. Offer upgrade (see UPGRADE MODE).
+- **No `.agents/`**, but root-level `agent-progress.md` or `agent-features.json` exist
+  → this is **v1.2.0 or v2.0.0**. Offer upgrade (see UPGRADE MODE).
+- **AGENTS.md, CLAUDE.md, or `.claude/settings.json` exist without a generator stamp**
+  → human-authored. Do **not** clobber. Back up to `*.bak` and ask before overwriting.
+- **Nothing found** → fresh install, proceed.
+
+**UPGRADE MODE:**
+Before generating new files, migrate existing data:
+- **From v1.2.0** (root-level files): read `agent-progress.md` → wrap as "Last Session"
+  in new `.agents/progress.md`; split `agent-features.json` → `.agents/features.json`
+  (strip `steps`) + `.agents/features-detail.json` (id + steps only); delete old root files.
+- **From v1.3.0** (`.agents/` exists): `.agents/progress.md` and `.agents/features.json`
+  are already in place; split `features.json` into lean + `features-detail.json` if not
+  already split; regenerate CLAUDE.md as `@import` + add `.cursor/rules/`.
+- **From v2.0.0** (root-level `agent-progress.md`, `agent-features.json`): move both
+  to `.agents/`; add `.agents/refs/` and `features-detail.json`.
+- Then regenerate all other files normally.
+- Inform user: "Migrated from vX.Y.Z. Changes: [list]."
+
+**Gate D — Monorepo**
+- Workspaces found (pnpm-workspace.yaml, `workspaces` field, Nx, Turbo, Lerna) → ask:
+  single root harness or per-package? Default: root + a one-line pointer per package.
+
+**Gate E — Team vs solo (commit policy)**
+- Remote present → ask: commit `.agents/progress.md` and `.claude/settings.json`
+  (shared team state) or gitignore them (personal)?
+- Always append `CLAUDE.local.md` to `.gitignore` for personal overrides.
+
+**Brownfield analysis** (after gates — skip parts that are gated out):
+- Manifest → language, framework, package manager.
+- List top-level dirs excluding: `.git`, `node_modules`, `__pycache__`, `vendor`,
+  `dist`, `.next`, `target`, `.turbo`, `coverage`.
+- Read first 80 lines of `README.md` if present.
+- Read `src/` / `app/` / `lib/` one level deep for domain entities.
+- Detect: monorepo?, key scripts (dev/build/test/lint/typecheck/migrate/seed),
+  infra (auth, db, ORM, deploy), multi-tenant?, test strategy.
+
+**Package-manager detection chain** (first hit wins):
+`CLAUDE_PACKAGE_MANAGER` env → `packageManager` field in package.json →
+lockfile (pnpm-lock.yaml / yarn.lock / package-lock.json / bun.lockb) →
+first available in PATH.
+
+---
+
+## STEP 1 — Create directories and write harness metadata
+
+```bash
+mkdir -p scripts .claude .cursor/rules .agents/refs .agents/archive
 ```
 
 Write `.agents/harness.json` — used by future runs to detect version and offer upgrades:
 
 ```json
 {
-  "generator": "init-harness",
-  "version": "1.3.0",
+  "_generatedBy": "init-harness",
+  "version": "2.1.0",
   "generated": "{{TODAY_DATE}}",
   "source": "https://github.com/dhinojosac/init-harness"
 }
@@ -95,243 +127,257 @@ Write `.agents/harness.json` — used by future runs to detect version and offer
 
 ---
 
-## STEP 2 — Generate `CLAUDE.md` (slim — max 55 lines)
+## STEP 2 — Generate `AGENTS.md` (CANONICAL — single source of truth)
 
-Write a lean `CLAUDE.md` tailored to THIS project. Replace every `{{placeholder}}` with
-real values from Step 0. The goal is **≤55 lines** — full details go in `.agents/refs/`.
-Write `# TODO: fill in` for any value that cannot be determined.
+This is the one file that holds the real session protocol. Keep it a **pilot's
+checklist, ≈60 lines max**. Every line must trace to a fact from Step 0.
+Detail that doesn't fit here goes into `.agents/refs/` (Step 5), not into this file.
 
 ```markdown
-# {{PROJECT_NAME}} — AI Agent Harness
+<!-- generated-by: init-harness v2.1 -->
+# {{PROJECT_NAME}} — Agent Harness
 
-> **Platform:** Claude Code auto-loads this file.
-> Same content in `AGENTS.md` (Codex) and `.cursorrules` (Cursor).
-> After editing this file, regenerate both: re-run `/init-harness --sync`.
+> Canonical agent instructions. `CLAUDE.md` imports this file; Cursor reads it
+> natively. Edit **here**, not in copies. Detail → `.agents/refs/`.
 
----
+## Stack
+{{ONE_LINE_STACK}}  — e.g. "TypeScript / Next.js 15 / pnpm / Postgres+Prisma"
 
-## 1. Session Startup (MANDATORY)
+## Commands
+- dev:        {{DEV_CMD}}
+- build:      {{BUILD_CMD}}
+- test:       {{TEST_CMD}}
+- typecheck:  {{TYPECHECK_CMD}}
+- lint:       {{LINT_CMD}}
 
-```bash
-bash scripts/init.sh        # Linux / macOS
-powershell scripts/init.ps1  # Windows
-```
+## Session start (just-in-time — do NOT pre-load everything)
+1. Read `.agents/progress.md` — it names the context to load and the next task.
+2. `git log --oneline -5 && git status`
+3. Pick the highest-priority `passes: false` entry in `.agents/features.json`.
+4. Load only the files that entry's `done` criterion points to.
+   → Stack & structure detail: `.agents/refs/stack.md`
+   → Architecture patterns: `.agents/refs/patterns.md`
 
-The script prints last session summary, git state, and pending features. Start there — do not run git or cat commands manually before it.
+## Session end
+1. Run typecheck + lint + test (hooks enforce this — do not skip).
+2. Commit in small atomic units: `type(scope): description`.
+3. Update `.agents/progress.md` with **decisions made and why**, not just "what".
+4. Set `passes: true` ONLY after meeting the feature's `done` criterion end-to-end.
 
----
+## Rules (hard — enforced by hooks where marked 🔒)
+- 🔒 Never `git push --force` to main; never `rm -rf` outside the workspace.
+- Never mark a feature `passes: true` without real, end-to-end verification.
+- Never delete or rename entries in `.agents/features.json`.
+- {{PROJECT_SPECIFIC_RULE_1_TRACEABLE_TO_A_REAL_FACT}}
+- {{PROJECT_SPECIFIC_RULE_2_OR_OMIT}}
 
-## 2. Project
-
-{{PROJECT_DESCRIPTION_ONE_PARAGRAPH}}
-
-**Stack:** `{{LANGUAGE}}` / `{{FRAMEWORK}}` / `{{PACKAGE_MANAGER}}`
-**Repo:** `{{REPO_FOLDER_NAME}}`
-
-→ Stack details & structure: `.agents/refs/stack.md`
-→ Architecture patterns: `.agents/refs/patterns.md`
-
----
-
-## 3. Key Commands
-
-```bash
-{{DEV_COMMAND}}         # start dev server
-{{BUILD_COMMAND}}       # build
-{{TEST_COMMAND}}        # run tests
-{{TYPECHECK_COMMAND}}   # type check
-{{LINT_COMMAND}}        # lint
-```
-
----
-
-## 4. Hard Rules (always apply, no exceptions)
-
-{{TOP_5_RULES_DERIVED_FROM_PROJECT}}
-- Atomic commits — one logical change per commit
-- Never set `"passes": true` without end-to-end verification
-- Never remove features from `.agents/features.json` — only update `"passes"`
-
-→ Full rules: `.agents/refs/rules.md`
-→ Common failures: `.agents/refs/failures.md`
-
----
-
-## 5. Session End (MANDATORY)
-
-```bash
-{{TYPECHECK_CMD}}
-{{LINT_CMD}}
-{{TEST_CMD}}
-git add <specific files>
-git commit -m "type(scope): description"
-# Update .agents/progress.md  →  move current to "last session" (≤7 lines)
-# Update .agents/features.json  →  set passes:true only if e2e verified
-```
-
-**Commit types:** `feat` · `fix` · `refactor` · `chore` · `docs` · `test`
+## Failure modes
+| Symptom | Fix |
+|---------|-----|
+{{2-4 REAL ROWS derived from README warnings or git history — no invented ones}}
 ```
 
 ---
 
-## STEP 3 — Generate `.agents/refs/` (4 files)
+## STEP 3 — Generate `CLAUDE.md` (imports canonical; adds Claude specifics)
 
-These files hold the detail that was previously in CLAUDE.md. They are read on-demand — not loaded every session — which keeps the active context lean.
+`CLAUDE.md` must NOT duplicate `AGENTS.md`. It uses `@AGENTS.md` to import it
+at session start, then adds only Claude Code-specific notes:
+
+```markdown
+<!-- generated-by: init-harness v2.1 -->
+@AGENTS.md
+
+## Claude Code specifics
+- Permissions and enforcement hooks: `.claude/settings.json`
+- On-demand detail (read when needed, not at startup):
+  - `.agents/refs/stack.md` — stack, structure, env vars
+  - `.agents/refs/patterns.md` — architectural patterns
+  - `.agents/refs/rules.md` — full coding rules
+  - `.agents/refs/failures.md` — common failure modes
+- Use plan mode for changes touching {{SENSITIVE_PATH_OR_OMIT_IF_NONE}}.
+```
+
+> `@AGENTS.md` is resolved by Claude Code at session start. The refs are listed here
+> so the agent knows they exist and can load them on demand — they are not pre-loaded.
+
+---
+
+## STEP 4 — Generate `.cursor/rules/*.mdc` (scoped, not a flat file)
+
+Replace the legacy flat `.cursorrules` with scoped `.mdc` files. Each has frontmatter
+that controls exactly when it loads:
+
+`.cursor/rules/00-core.mdc` — always loaded, the non-negotiables:
+```markdown
+---
+alwaysApply: true
+---
+Source of truth is AGENTS.md. Follow its session start/end protocol exactly.
+Hard rules: no force-push to main, no rm -rf outside workspace, never fake passes:true.
+Commit atomically. Load .agents/refs/ for detail — do not ask for context already there.
+```
+
+`.cursor/rules/10-{{lang}}.mdc` — loads just-in-time on matching files:
+```markdown
+---
+globs: {{e.g. src/**/*.ts,src/**/*.tsx}}
+---
+{{Language/framework conventions derived from the actual codebase — no invented rules.}}
+```
+
+`.cursor/rules/20-testing.mdc` — loads by relevance:
+```markdown
+---
+description: USE WHEN writing or modifying tests
+---
+{{Test conventions: runner, file location pattern, naming, what must be covered.}}
+```
+
+> Only create rule files you have real content for. Do not invent conventions.
+> Write a one-line legacy `.cursorrules` pointer only if needed for older Cursor:
+> `# Rules moved to .cursor/rules/ — see AGENTS.md`
+
+---
+
+## STEP 5 — Generate `.agents/refs/` (4 detail files — read on demand, not at startup)
+
+These files hold the detail that would otherwise bloat `AGENTS.md`. They are never
+pre-loaded — the agent reads them when a task actually requires the information.
 
 ### `.agents/refs/stack.md`
 
 ```markdown
+<!-- generated-by: init-harness v2.1 -->
 # {{PROJECT_NAME}} — Stack Reference
 
 ## Tech Stack
 
 | Layer | Choice | Version |
 |-------|--------|---------|
-{{TECH_STACK_ROWS}}
+{{TECH_STACK_ROWS — derive from manifest and lock files}}
 
 ## Repository Structure
 
 ```
-{{ANNOTATED_DIRECTORY_TREE}}
+{{ANNOTATED_DIRECTORY_TREE — one-line annotation per top-level dir}}
 ```
 
 ## Environment Variables
 
-{{ENV_TABLE}}
+| Variable | Purpose | Required |
+|----------|---------|---------|
+{{ENV_TABLE — derive from .env.example, README, or source code}}
 ```
 
 ### `.agents/refs/patterns.md`
 
 ```markdown
+<!-- generated-by: init-harness v2.1 -->
 # {{PROJECT_NAME}} — Architectural Patterns
 
-{{PATTERNS_DETAILED — data flow, state management, API conventions, naming, etc.}}
+{{DATA_FLOW, STATE_MANAGEMENT, API_CONVENTIONS, NAMING_PATTERNS — real, derived}}
 ```
 
 ### `.agents/refs/rules.md`
 
 ```markdown
+<!-- generated-by: init-harness v2.1 -->
 # {{PROJECT_NAME}} — Coding Rules
 
-{{RULES_DETAILED — style, imports, error handling, test requirements, security, etc.}}
+{{STYLE, IMPORTS, ERROR_HANDLING, TEST_REQUIREMENTS, SECURITY — real, derived}}
 ```
 
 ### `.agents/refs/failures.md`
 
 ```markdown
+<!-- generated-by: init-harness v2.1 -->
 # {{PROJECT_NAME}} — Common Failure Modes
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-{{FAILURE_TABLE_ROWS — derive from README warnings, known gotchas, git history}}
+{{FAILURE_ROWS — derive from README warnings, known gotchas, git history}}
 ```
 
 ---
 
-## STEP 4 — Generate `AGENTS.md`
-
-Copy `CLAUDE.md` verbatim. Change only the platform note in the header to:
-
-```
-> **Platform:** OpenAI Codex auto-loads this file.
-> Same content in `CLAUDE.md` (Claude Code) and `.cursorrules` (Cursor).
-> After editing CLAUDE.md, regenerate this file: re-run `/init-harness --sync`.
-```
-
----
-
-## STEP 5 — Generate `.cursorrules`
-
-Write a condensed version (maximum 45 lines). Must include:
-
-1. **Session Start** — 2 steps: run init script, pick pending feature
-2. **Session End** — 4 steps: typecheck, lint, commit, update .agents/progress.md
-3. **Hard Rules** — all non-negotiable constraints, one line each
-4. **Stack** — one-line summary
-5. **Key Commands** — dev, typecheck, lint, test with actual command text
-6. Final line: `## Full docs: CLAUDE.md · .agents/refs/`
-
----
-
-## STEP 6 — Generate `.agents/progress.md` (rolling window)
+## STEP 6 — Generate `.agents/progress.md` (rolling window + decisions)
 
 ```markdown
-# Agent Progress
+<!-- generated-by: init-harness v2.1 -->
+# Agent Progress — Handoff Log
 
-> Rolling window — 3 visible states maximum.
-> At end of each session: condense "Current Session" into "Last Session" (≤7 lines),
-> move old "Last Session" to `.agents/archive/progress-{{YYYY-MM}}.md`.
+> Newest entry on top. A fresh agent reads ONLY the top entry to resume.
+> Record decisions and WHY, not just what changed.
+> At session end: condense current entry to ≤7 lines, move old entry to
+> `.agents/archive/progress-{{YYYY-MM}}.md`.
 
 ---
 
-## Current Session
-_Started: {{TODAY_DATE}}_
-<!-- Fill this in as you work. Clear completely at session end. -->
+## {{TODAY_DATE}} — Harness initialized
 
-## Last Session — {{TODAY_DATE}}
-- Initialized harness: CLAUDE.md, AGENTS.md, .cursorrules, .agents/, scripts/, .claude/settings.json
-{{UNCOMMITTED_FILES_NOTE — one line if files exist, omit if clean}}
-- Next: run scripts/init.sh → pick first pending feature from .agents/features.json
+### State
+Harness generated. Repo: {{BRANCH}} @ {{SHORT_SHA_OR_"no commits yet"}}.
 
-## Archive
-→ `.agents/archive/` (sessions older than last)
+### Decisions (and why)
+{{KEY_DECISIONS_FROM_GIT_AND_README — or "none yet" for greenfield}}
+
+### Next
+- Run `bash scripts/init.sh` (Linux/Mac) or `powershell scripts/init.ps1` (Windows).
+- Pick the top `passes: false` feature in `.agents/features.json`.
+
+### Blockers
+{{UNCOMMITTED_FILES_OR_"none"}}
 ```
 
 ---
 
 ## STEP 7 — Generate `.agents/features.json` and `.agents/features-detail.json`
 
-Two files, one purpose: lean lookup at startup, detailed steps on demand.
+Two files: lean registry for session startup, full steps on demand.
 
-### `.agents/features.json` — lean registry (no steps)
+### `.agents/features.json` — lean registry (no steps at startup)
 
-Infer features from the codebase. Scan:
-- Route / page / controller files
-- README features section or changelog
-- Navigation components / sidebar / menu files
-- Existing test files
-- Recent commit messages
-
-Aim for **10–25 features** covering all major user-facing flows.
-Use realistic `"passes"` values: `true` for clearly shipped functionality,
-`false` for anything uncertain, in-progress, or untested.
+Derive features from real signals only: routes, controllers, nav components, tests,
+README features section, recent commits. In **greenfield mode**, seed 3–5 intended
+features from the user's stated goal; prefer a small honest seed over 20 invented ones.
 
 ```json
 {
-  "version": "2.0",
-  "instructions": "NEVER remove or rename entries. Set 'passes': true only after e2e verification. Pick the highest-priority 'passes: false' entry each session. Priority: 1=critical, 2=high, 3=medium, 4=low. Steps for each feature → features-detail.json",
+  "version": "2.1",
+  "_generatedBy": "init-harness",
+  "instructions": "Never remove or rename entries. Set 'passes' true ONLY after meeting the 'done' criterion end-to-end — ideally verified by a run separate from the agent that wrote the code. Pick the highest-priority passes:false entry each session. Priority: 1=critical, 2=high, 3=medium, 4=low. Steps are in features-detail.json.",
   "features": [
     {
       "id": "{{category}}-001",
       "category": "{{category}}",
-      "priority": {{1-4}},
-      "description": "{{one sentence, subject-verb-object, testable in a real browser or terminal}}",
-      "passes": {{true|false}}
+      "priority": 1,
+      "description": "{{subject-verb-object, testable in a real browser or terminal}}",
+      "done": "{{explicit, testable acceptance criterion — the sprint contract}}",
+      "passes": false
     }
   ]
 }
 ```
 
-Rules:
-- Group by category (auth, routing, [domain-entities], ui, i18n, api, jobs, etc.)
-- Include an auth flow entry if authentication exists
-- Include a data-isolation entry if the project is multi-tenant
-- Mark in-progress items (from git status / recent commits) as `"passes": false`
-- Never invent features — derive everything from observed files and commits
+Rules: group by category (auth, routing, domain-entities, ui, api, jobs…); include an
+auth entry if auth exists; include a data-isolation entry if multi-tenant; mark
+in-progress items `passes:false`; never invent features.
 
-### `.agents/features-detail.json` — steps per feature (read on demand)
+### `.agents/features-detail.json` — steps per feature (read only when starting that feature)
 
 ```json
 {
-  "version": "2.0",
-  "instructions": "Read this file when starting work on a specific feature. Look up by id. Do not load this file at session start.",
+  "version": "2.1",
+  "_generatedBy": "init-harness",
+  "instructions": "Read this file only when starting work on a specific feature. Look up by id. Do NOT load at session start — it is not needed until you pick a feature.",
   "features": [
     {
       "id": "{{category}}-001",
       "steps": [
-        "{{step 1 — what a human would do}}",
+        "{{step 1 — what a human tester would do}}",
         "{{step 2}}",
-        "{{step 3 — what to verify as success}}"
+        "{{step 3 — what success looks like}}"
       ]
     }
   ]
@@ -340,44 +386,47 @@ Rules:
 
 ---
 
-## STEP 8 — Generate `scripts/init.sh` (POSIX)
+## STEP 8 — Generate `scripts/init.sh` (POSIX; silent success, verbose failure)
 
-Write a shell script that:
-1. Verifies working directory via root sentinel file (`package.json` / `Cargo.toml` / `go.mod` / etc.)
-2. Checks required runtime versions (node/python/go/rust — specific to the project)
-3. Warns if `.env` / `.env.local` / equivalent config is missing
-4. Installs / fetches dependencies (`pnpm install` / `pip install -r requirements.txt` / `cargo fetch` / `go mod download`)
-5. Runs compile or type check
-6. Checks if git is available (`git rev-parse --git-dir 2>/dev/null`):
-   - If yes: prints last 5 commits (`git log --oneline -5`) and `git status --short`
-   - If no: prints `[WARN] No git repository — session tracking is limited`
-7. Prints the full `.agents/progress.md` (bounded by rolling window design)
-8. Parses `.agents/features.json` using `python3 -c` or `node -e` and prints all
-   `"passes": false` features with their priority, sorted by priority ascending
+A bootstrap script that:
+1. Verifies the working dir via a root sentinel file (manifest).
+2. Checks required runtime versions for the detected stack.
+3. Warns if `.env` / `.env.local` is missing.
+4. Installs/fetches deps with the detected package manager.
+5. Runs typecheck/compile. **On success: one line. On failure: print the error.**
+6. Writes full git + context dump to `.harness-context.txt`; prints only a
+   2–3 line summary + the file path (do not flood the agent context).
+7. Prints `.agents/progress.md` (bounded by rolling window — safe to print whole file).
+8. Parses `.agents/features.json` and prints all `passes:false` features sorted by
+   priority ascending, formatted as `[p{{priority}}] {{id}}: {{description}}`.
+   Use `node -e` or `python3 -c` for JSON parsing.
 
-Use ANSI color output. Exit code 1 on fatal errors, 0 on success.
-
----
-
-## STEP 9 — Generate `scripts/init.ps1` (PowerShell)
-
-Write the PowerShell equivalent with identical behavior:
-- `Write-Host` with `-ForegroundColor` for colors
-- `ConvertFrom-Json` to parse `.agents/features.json` natively (access `.features` array)
-- `Get-Content .agents/progress.md` to print progress (whole file — it's bounded)
-- `Test-Path` instead of `[ -f ]`
-- `git rev-parse --git-dir` with `$LASTEXITCODE` check for git detection
-- Print incomplete features as `[p{{priority}}] {{id}}: {{description}}`
+Use ANSI color output. Exit 1 on fatal errors, 0 on success.
 
 ---
 
-## STEP 10 — Generate `.claude/settings.json`
+## STEP 9 — Generate `scripts/init.ps1` (PowerShell equivalent)
 
-Permissions grouped by risk class. `git commit` is included as it is a core
-workflow step; `git push` is intentionally excluded and requires explicit user action.
+Identical behavior:
+- `Write-Host -ForegroundColor` for color output.
+- `ConvertFrom-Json` to parse `.agents/features.json` natively.
+- `Get-Content .agents/progress.md` to print the handoff.
+- `Test-Path` instead of `[ -f ]`.
+- `git rev-parse --git-dir` + `$LASTEXITCODE` for git detection.
+- Write context dump to `.harness-context.txt`, print summary + path.
+- Print incomplete features as `[p{{priority}}] {{id}}: {{description}}`.
+
+---
+
+## STEP 10 — Generate `.claude/settings.json` (enforcement, not just an echo)
+
+Hooks enforce what prose cannot. `deny` blocks destructive commands deterministically.
+The `PostToolUse` hook runs typecheck silently after every edit — **only include it
+if the project has a fast typecheck command (< ~10 seconds)**; omit it otherwise.
 
 ```json
 {
+  "_generatedBy": "init-harness",
   "permissions": {
     "allow": [
       "Bash({{PACKAGE_MANAGER_CMD}} install*)",
@@ -393,16 +442,32 @@ workflow step; `git push` is intentionally excluded and requires explicit user a
       "Bash(cat AGENTS.md)",
       "Bash(bash scripts/init.sh)",
       "Bash(powershell scripts/init.ps1)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(rm -rf /*)"
     ]
   },
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{TYPECHECK_CMD}} > .harness-verify.log 2>&1 || (echo '⚠ typecheck failed — see .harness-verify.log'; tail -n 20 .harness-verify.log)"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"\n========================================\nSESSION END CHECKLIST:\n  1. {{TYPECHECK_CMD}}\n  2. {{LINT_CMD}}\n  3. git add <files> && git commit -m 'type(scope): description'\n  4. .agents/progress.md  →  condense current session to ≤7 lines\n  5. .agents/features.json  →  set passes:true only if e2e verified\n========================================\""
+            "command": "echo \"\n========================================\nSESSION END:\n  1. {{TYPECHECK_CMD}} && {{LINT_CMD}}\n  2. git add <files> && git commit -m 'type(scope): description'\n  3. .agents/progress.md  → record decisions + why (≤7 lines)\n  4. .agents/features.json → passes:true ONLY if done criterion met e2e\n========================================\""
           }
         ]
       }
@@ -411,47 +476,49 @@ workflow step; `git push` is intentionally excluded and requires explicit user a
 }
 ```
 
-Replace `{{PACKAGE_MANAGER_CMD}}` with `pnpm` / `npm` / `pip` / `cargo` / `go` / `composer` as detected.
-
-If git is unavailable (DEGRADED MODE): remove all `Bash(git *)` entries from the allow list.
+Notes:
+- In DEGRADED MODE (no git): remove all `Bash(git *)` entries from `allow` and `deny`.
+- `PostToolUse` is silent on success, verbose on failure — never clutters the context
+  unless something breaks.
+- If the project has no fast typecheck, omit `PostToolUse` entirely rather than
+  running something slow after every file edit.
 
 ---
 
 ## STEP 11 — Final report
 
-After all files are created, output:
-
 ```
 ╔══════════════════════════════════════════════════╗
-║       init-harness v1.3.0 — Setup Complete       ║
+║        init-harness v2.1.0 — Setup Complete      ║
 ╠══════════════════════════════════════════════════╣
 ║  Project : {{PROJECT_NAME}}                      ║
 ║  Stack   : {{LANGUAGE}} / {{FRAMEWORK}}          ║
-║  Git     : {{available | DEGRADED — no repo}}    ║
+║  Mode    : {{brownfield|greenfield}}             ║
+║  Git     : {{available | initialized | DEGRADED}}║
 ╠══════════════════════════════════════════════════╣
 ║  Root (platform-required):                       ║
-║  ✓ CLAUDE.md              — Claude Code (~50 ln) ║
-║  ✓ AGENTS.md              — OpenAI Codex         ║
-║  ✓ .cursorrules           — Cursor (~45 ln)      ║
+║  ✓ AGENTS.md              — canonical (~60 ln)   ║
+║  ✓ CLAUDE.md              — @imports AGENTS.md   ║
+║  ✓ .cursor/rules/*.mdc    — scoped JIT rules     ║
 ║  Agent context (.agents/):                       ║
 ║  ✓ harness.json           — version metadata     ║
 ║  ✓ refs/stack.md          — stack & structure    ║
 ║  ✓ refs/patterns.md       — architecture         ║
 ║  ✓ refs/rules.md          — coding rules         ║
 ║  ✓ refs/failures.md       — failure modes        ║
-║  ✓ progress.md            — session state        ║
+║  ✓ progress.md            — handoff (decisions)  ║
 ║  ✓ features.json          — {{N}} features ({{P}} passing, {{F}} to verify)
 ║  ✓ features-detail.json   — steps (read on demand)
 ║  Bootstrap:                                      ║
 ║  ✓ scripts/init.sh        — POSIX                ║
 ║  ✓ scripts/init.ps1       — Windows              ║
-║  ✓ .claude/settings.json  — permissions + hook   ║
+║  ✓ .claude/settings.json  — permissions + hooks  ║
 ╠══════════════════════════════════════════════════╣
 ║  Next steps:                                     ║
-║  1. bash scripts/init.sh         (Linux/Mac)     ║
+║  1. bash scripts/init.sh  (Linux/Mac)            ║
 ║     powershell scripts/init.ps1  (Windows)       ║
 ║  2. Review .agents/features.json                 ║
-║  3. git add . && git commit -m "chore: init AI agent harness"
+║  3. git add . && git commit -m "chore: init AI agent harness v2.1"
 ╚══════════════════════════════════════════════════╝
 ```
 
@@ -459,11 +526,16 @@ After all files are created, output:
 
 ## IMPORTANT CONSTRAINTS
 
-- **Never fabricate** tech stack, features, or commands — derive everything from Step 0
-- **Never use generic filler** — be specific to the actual project
-- **If you cannot determine** a value, write `# TODO: fill in` rather than guessing
-- **If harness files already exist**, report them and ask before overwriting
-- **CLAUDE.md must stay ≤55 lines** — move any detail that exceeds this to `.agents/refs/`
-- **features-detail.json is never loaded at session start** — the agent reads it only when starting a specific feature
-- **The harness is for THIS project only** — never reference other projects
-- **Harness assumptions expire** — as models improve, some scaffolding becomes unnecessary overhead; prefer removing complexity over keeping it
+- **Never fabricate** stack, features, or commands — derive everything from Step 0.
+- **Never duplicate content** — `AGENTS.md` is canonical; `CLAUDE.md` imports it.
+- **Never clobber human-authored files** — check for the generator stamp; back up
+  unstamped files and ask before overwriting.
+- **If a value is unknown**, write `# TODO: fill in` (brownfield) or ask (greenfield).
+- **Hooks over prose** for hard constraints — the `deny` list and `PostToolUse`
+  enforce what markdown cannot.
+- **Root stays lean** — only `AGENTS.md`, `CLAUDE.md`, and `.cursor/rules/` belong
+  at the root; all agent state lives in `.agents/`.
+- **`features-detail.json` is never loaded at session start** — read it only when
+  picking up a specific feature.
+- **Harness assumptions expire** — as models improve, some scaffolding becomes
+  unnecessary overhead; prefer removing complexity over keeping it.
